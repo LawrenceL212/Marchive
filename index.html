@@ -413,6 +413,15 @@
   @media (max-width: 360px){
     .wordmark{ font-size:16px; letter-spacing:0.18em; text-indent:0.18em; }
   }
+
+  @media (max-width: 640px){
+    .doc-topbar{ padding: 14px 16px; }
+    .doc-toolbar{ padding: 8px 16px; gap: 6px; }
+    .doc-tool-btn{ padding: 5px 8px; font-size: 11px; }
+    .doc-body-wrap{ padding: 28px 18px 100px; }
+    .doc-title-input, .doc-title-display{ font-size: 26px; }
+    .doc-editable, .doc-read-body{ font-size: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -544,6 +553,182 @@
     padding: 0;
   }
   .inline-link:hover{ color: var(--private); }
+
+  /* ---- full-page essay document (editor + reader) ---- */
+  .doc-page{
+    position: fixed;
+    inset: 0;
+    background: var(--paper);
+    overflow-y: auto;
+    z-index: 70;
+  }
+  .doc-topbar{
+    position: sticky;
+    top: 0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 14px;
+    padding: 18px 24px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--hairline);
+    z-index: 2;
+  }
+  .doc-topbar-left{ display:flex; align-items:center; gap:14px; }
+  .doc-toolbar{
+    display:flex;
+    flex-wrap: wrap;
+    align-items:center;
+    gap: 4px;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--paper-raised);
+  }
+  .doc-tool-btn{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12px;
+    border: 1px solid var(--hairline);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .doc-tool-btn:hover{ border-color: var(--ink); }
+  .doc-body-wrap{
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 44px 24px 120px;
+  }
+  .doc-title-input{
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 700;
+    font-size: 36px;
+    color: var(--ink);
+    padding: 0;
+    margin-bottom: 8px;
+  }
+  .doc-title-input:focus{ outline: none; }
+  .doc-title-display{
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 700;
+    font-size: 36px;
+    color: var(--ink);
+    line-height: 1.2;
+    margin-bottom: 10px;
+  }
+  .doc-editable{
+    min-height: 320px;
+    font-family: 'Lora', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink-soft);
+  }
+  .doc-editable:focus{ outline: none; }
+  .doc-editable[data-placeholder]:empty:before{
+    content: attr(data-placeholder);
+    color: var(--muted);
+  }
+  .doc-editable p, .doc-editable div{ margin: 0 0 1em; }
+  .doc-editable ul, .doc-editable ol{ margin: 0 0 1em; padding-left: 1.4em; }
+  .doc-editable blockquote{
+    margin: 0 0 1em;
+    padding-left: 14px;
+    border-left: 2px solid var(--hairline);
+    color: var(--muted);
+  }
+  .doc-read-body{
+    font-family: 'Lora', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink-soft);
+  }
+  .doc-read-body p, .doc-read-body div{ margin: 0 0 1em; }
+  .doc-read-body ul, .doc-read-body ol{ margin: 0 0 1em; padding-left: 1.4em; }
+  .doc-read-body blockquote{
+    margin: 0 0 1em;
+    padding-left: 14px;
+    border-left: 2px solid var(--hairline);
+    color: var(--muted);
+  }
+  .doc-section-heading{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    margin: 44px 0 14px;
+  }
+  .doc-bib-row{
+    display:flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items:center;
+  }
+  .doc-bib-row input{ flex:1; }
+  .doc-bib-list{
+    font-family:'Lora', serif;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+  }
+  .doc-bib-list li{ margin-bottom: 6px; }
+  .doc-bib-list a{ color: var(--ink); }
+  .doc-post-picker{
+    display:flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+  .doc-post-tile{
+    flex: 0 0 auto;
+    width: 96px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    padding: 3px;
+    border-radius: 4px;
+  }
+  .doc-post-tile.selected{ border-color: var(--private); }
+  .doc-post-tile img{
+    width: 90px; height: 90px;
+    object-fit: cover;
+    display: block;
+    border: 1px solid var(--hairline);
+  }
+  .doc-post-tile-caption{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--muted);
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .doc-none-tile{
+    flex: 0 0 auto;
+    width: 90px; height: 90px;
+    border: 1px dashed var(--hairline);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .doc-none-tile.selected{ border: 2px solid var(--private); }
+  .doc-embedded-post{
+    margin-top: 14px;
+    border: 1px solid var(--hairline);
+    padding: 14px;
+    cursor: pointer;
+  }
+  .doc-embedded-post img{
+    width: 100%;
+    max-height: 320px;
+    object-fit: cover;
+    display: block;
+    margin-bottom: 10px;
+  }
 </style>
 <div id="app"></div>
 
@@ -594,6 +779,7 @@
     activeConversationUsername: null,
     activeMessages: [],      // [{ id, from, to, text, createdAt }]
     messageDraft: '',
+    page: null,               // null | { type: 'view'|'edit', essay: essayObj|null }
   };
 
   let listenersAttached = { publicEssays:false, posts:false, privateEssays:null, profile:null, follows:null, conversations:null, thread:null };
@@ -867,8 +1053,22 @@
   }
 
   // ---------- render ----------
+  let currentPageKey = null;
+
   function render(){
     const app = document.getElementById('app');
+
+    if(state.page){
+      const key = state.page.type + ':' + (state.page.essay ? state.page.essay.id : 'new');
+      if(currentPageKey !== key){
+        currentPageKey = key;
+        app.innerHTML = '';
+        app.appendChild(EssayPage());
+      }
+      return; // skip the normal rebuild entirely while a document page is open
+    }
+    currentPageKey = null;
+
     app.innerHTML = '';
     app.appendChild(Header());
     app.appendChild(el('div', {class:'rule'}));
@@ -998,14 +1198,10 @@
   }
 
   function EssayItem(essay){
-    const isOpen = state.openEssayId === essay.id;
     const isOwner = state.user && essay.ownerUid === state.user.uid;
-    const item = el('div', {class: 'essay-item' + (isOpen ? ' open' : '')});
-    const head = el('div', {class:'essay-head', onClick: () => {
-      state.openEssayId = isOpen ? null : essay.id;
-      render();
-    }},
-      el('span', {class:'essay-title' + (isOpen ? ' underline' : '')}, essay.title),
+    const item = el('div', {class: 'essay-item'});
+    const head = el('div', {class:'essay-head', onClick: () => openEssayView(essay)},
+      el('span', {class:'essay-title underline'}, essay.title),
       el('span', {class: 'stamp ' + (essay.private ? 'private' : 'public')}, essay.private ? 'PRIVATE' : 'PUBLIC'),
     );
     if(isOwner){
@@ -1015,14 +1211,10 @@
       }, iconEl(ICONS.trash)));
     }
     item.appendChild(head);
-
-    if(isOpen){
-      item.appendChild(el('div', {class:'essay-body'}, essay.body));
-      const meta = el('div', {class:'essay-meta'});
-      meta.appendChild(AuthorLine(essay.authorName, essay.ownerUid));
-      meta.appendChild(document.createTextNode(' · ' + fmtDate(essay.createdAt) + ' · ' + fmtWordCount(essay.body)));
-      item.appendChild(meta);
-    }
+    const meta = el('div', {class:'essay-meta', style:'margin-top:4px; cursor:pointer;', onClick: () => openEssayView(essay)});
+    meta.appendChild(AuthorLine(essay.authorName, essay.ownerUid));
+    meta.appendChild(document.createTextNode(' · ' + fmtDate(essay.createdAt)));
+    item.appendChild(meta);
     return item;
   }
 
@@ -1033,6 +1225,316 @@
       state.banner = 'Could not delete: ' + err.message;
       render();
     });
+    if(state.page && state.page.essay && state.page.essay.id === essay.id) closeEssayPage();
+  }
+
+  // ---------- full-page essay document (editor + reader) ----------
+
+  function openEssayView(essay){
+    state.modal = null;
+    state.page = { type: 'view', essay };
+    render();
+  }
+
+  function openEssayEdit(essay){
+    state.modal = null;
+    state.page = { type: 'edit', essay: essay || null };
+    render();
+  }
+
+  function closeEssayPage(){
+    state.page = null;
+    render();
+  }
+
+  // Minimal HTML sanitizer: strips anything outside a small safelist before
+  // essay bodies (which are stored as raw editor HTML) are ever injected via innerHTML.
+  function sanitizeEssayHtml(html){
+    const allowed = new Set(['B','STRONG','I','EM','U','H2','H3','P','BR','UL','OL','LI','A','BLOCKQUOTE','DIV','SPAN']);
+    let doc;
+    try{ doc = new DOMParser().parseFromString(html || '', 'text/html'); }
+    catch(e){ return ''; }
+    function clean(node){
+      [...node.childNodes].forEach(child => {
+        if(child.nodeType === 1){
+          if(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','FORM'].includes(child.tagName)){
+            child.remove();
+            return;
+          }
+          if(!allowed.has(child.tagName)){
+            while(child.firstChild) node.insertBefore(child.firstChild, child);
+            node.removeChild(child);
+            return;
+          }
+          [...child.attributes].forEach(attr => {
+            if(child.tagName === 'A' && attr.name === 'href' && /^https?:\/\//i.test(attr.value)) return;
+            child.removeAttribute(attr.name);
+          });
+          clean(child);
+        } else if(child.nodeType === 8){
+          child.remove();
+        }
+      });
+    }
+    clean(doc.body);
+    return doc.body.innerHTML;
+  }
+
+  function plainTextFromHtml(html){
+    const div = document.createElement('div');
+    div.innerHTML = sanitizeEssayHtml(html);
+    return div.textContent || '';
+  }
+
+  // Find an essay (visible to the current viewer) that links to a given post — for the
+  // reverse "this post illustrates an essay" indicator shown on PostCard.
+  function findEssayLinkedToPost(postId){
+    const pool = [...state.publicEssays, ...(state.user ? state.privateEssays.map(e => ({...e, private:true})) : [])];
+    return pool.find(e => e.linkedPostId === postId) || null;
+  }
+
+  function saveEssayDoc(existingEssay, { title, bodyHtml, bibliography, linkedPostId, isPrivate }){
+    const uid = state.user.uid;
+    const payload = {
+      title, bodyHtml,
+      bibliography: bibliography || [],
+      linkedPostId: linkedPostId || null,
+      ownerUid: uid,
+      authorName: currentAuthorName(),
+      createdAt: existingEssay ? existingEssay.createdAt : firebase.database.ServerValue.TIMESTAMP,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+    };
+    if(!existingEssay){
+      const path = isPrivate ? 'privateEssays/' + uid : 'publicEssays';
+      const key = db.ref(path).push().key;
+      return db.ref(path + '/' + key).set(payload).then(() => ({ ...payload, id: key, private: isPrivate }));
+    }
+    const wasPrivate = !!existingEssay.private;
+    const oldPath = wasPrivate ? 'privateEssays/' + existingEssay.ownerUid + '/' + existingEssay.id : 'publicEssays/' + existingEssay.id;
+    if(wasPrivate === isPrivate){
+      return db.ref(oldPath).update(payload).then(() => ({ ...existingEssay, ...payload, private: isPrivate }));
+    }
+    const newPath = isPrivate ? 'privateEssays/' + uid + '/' + existingEssay.id : 'publicEssays/' + existingEssay.id;
+    const updates = {};
+    updates[oldPath] = null;
+    updates[newPath] = payload;
+    return db.ref().update(updates).then(() => ({ ...existingEssay, ...payload, private: isPrivate }));
+  }
+
+  function EssayPage(){
+    if(state.page.type === 'edit') return EssayEditor(state.page.essay);
+    return EssayReader(state.page.essay);
+  }
+
+  function EssayEditor(existingEssay){
+    const page = el('div', {class:'doc-page'});
+    let isPrivate = existingEssay ? !!existingEssay.private : false;
+    let linkedPostId = existingEssay ? (existingEssay.linkedPostId || null) : null;
+    let bibliography = existingEssay && existingEssay.bibliography ? existingEssay.bibliography.map(b => ({...b})) : [];
+    let saving = false;
+
+    // top bar
+    const topbar = el('div', {class:'doc-topbar'});
+    const left = el('div', {class:'doc-topbar-left'});
+    left.appendChild(el('button', {class:'icon-btn', title:'Back', onClick: () => {
+      if(confirm('Discard this draft and go back?')) closeEssayPage();
+    }}, iconEl(ICONS.back)));
+
+    const privacyRow = el('div', {style:'display:flex; align-items:center; gap:8px;'});
+    privacyRow.appendChild(el('span', {class:'essay-meta'}, 'PRIVATE'));
+    const switchEl = el('div', {class:'switch' + (isPrivate ? ' is-private' : '')});
+    switchEl.appendChild(el('div', {class:'knob'}));
+    switchEl.addEventListener('click', () => {
+      isPrivate = !isPrivate;
+      switchEl.classList.toggle('is-private', isPrivate);
+    });
+    privacyRow.appendChild(switchEl);
+    left.appendChild(privacyRow);
+    topbar.appendChild(left);
+
+    const saveBtn = el('button', {class:'pill-btn', onClick: onSave}, existingEssay ? 'Save changes' : 'Publish');
+    topbar.appendChild(saveBtn);
+    page.appendChild(topbar);
+
+    // formatting toolbar
+    const toolbar = el('div', {class:'doc-toolbar'});
+    function toolBtn(label, cmd, arg){
+      return el('button', {
+        class:'doc-tool-btn', type:'button',
+        onMousedown: (e) => e.preventDefault(), // keep focus/selection in the editable area
+        onClick: () => { bodyEl.focus(); document.execCommand(cmd, false, arg || null); },
+      }, label);
+    }
+    toolbar.appendChild(toolBtn('B', 'bold'));
+    toolbar.appendChild(toolBtn('I', 'italic'));
+    toolbar.appendChild(toolBtn('U', 'underline'));
+    toolbar.appendChild(toolBtn('H2', 'formatBlock', 'H2'));
+    toolbar.appendChild(toolBtn('H3', 'formatBlock', 'H3'));
+    toolbar.appendChild(toolBtn('“ ”', 'formatBlock', 'BLOCKQUOTE'));
+    toolbar.appendChild(toolBtn('• List', 'insertUnorderedList'));
+    toolbar.appendChild(toolBtn('1. List', 'insertOrderedList'));
+    toolbar.appendChild(el('button', {
+      class:'doc-tool-btn', type:'button',
+      onMousedown: (e) => e.preventDefault(),
+      onClick: () => {
+        const url = prompt('Link URL (https://…)');
+        if(url && /^https?:\/\//i.test(url)){ bodyEl.focus(); document.execCommand('createLink', false, url); }
+      },
+    }, 'Link'));
+    toolbar.appendChild(toolBtn('Clear', 'removeFormat'));
+    page.appendChild(toolbar);
+
+    // body
+    const wrap = el('div', {class:'doc-body-wrap'});
+    const titleInput = el('input', {
+      class:'doc-title-input', type:'text', placeholder:'Untitled essay',
+      value: existingEssay ? existingEssay.title : '',
+    });
+    wrap.appendChild(titleInput);
+
+    const bodyEl = el('div', {
+      class:'doc-editable', contenteditable:'true', 'data-placeholder':'Start writing…',
+    });
+    if(existingEssay){
+      bodyEl.innerHTML = existingEssay.bodyHtml
+        ? sanitizeEssayHtml(existingEssay.bodyHtml)
+        : '<p>' + (existingEssay.body || '').replace(/</g, '&lt;') + '</p>';
+    }
+    wrap.appendChild(bodyEl);
+
+    // bibliography
+    wrap.appendChild(el('div', {class:'doc-section-heading'}, 'REFERENCES'));
+    const bibList = el('div', {});
+    function renderBibRows(){
+      bibList.innerHTML = '';
+      bibliography.forEach((ref, i) => {
+        const row = el('div', {class:'doc-bib-row'});
+        const labelInput = el('input', {type:'text', placeholder:'Title / author', value: ref.label || ''});
+        const urlInput = el('input', {type:'url', placeholder:'https:// (optional)', value: ref.url || ''});
+        labelInput.addEventListener('input', (e) => { bibliography[i].label = e.target.value; });
+        urlInput.addEventListener('input', (e) => { bibliography[i].url = e.target.value; });
+        const removeBtn = el('button', {class:'delete-btn', style:'margin-left:0;', title:'Remove', onClick: () => {
+          bibliography.splice(i, 1);
+          renderBibRows();
+        }}, iconEl(ICONS.trash));
+        row.appendChild(labelInput);
+        row.appendChild(urlInput);
+        row.appendChild(removeBtn);
+        bibList.appendChild(row);
+      });
+    }
+    renderBibRows();
+    wrap.appendChild(bibList);
+    wrap.appendChild(el('button', {class:'inline-link', style:'margin-top:4px;', onClick: () => {
+      bibliography.push({ label:'', url:'' });
+      renderBibRows();
+    }}, '+ Add reference'));
+
+    // link to a social post
+    wrap.appendChild(el('div', {class:'doc-section-heading'}, 'LINK A SOCIAL POST — the aesthetic depiction of this essay'));
+    const myPosts = state.posts.filter(p => state.user && p.ownerUid === state.user.uid);
+    const picker = el('div', {class:'doc-post-picker'});
+    function renderPicker(){
+      picker.innerHTML = '';
+      const none = el('div', {class:'doc-none-tile' + (!linkedPostId ? ' selected' : ''), onClick: () => { linkedPostId = null; renderPicker(); }}, 'None');
+      picker.appendChild(none);
+      myPosts.forEach(p => {
+        const tile = el('div', {class:'doc-post-tile' + (linkedPostId === p.id ? ' selected' : ''), onClick: () => { linkedPostId = p.id; renderPicker(); }});
+        if(p.image) tile.appendChild(el('img', {src:p.image, alt:'post'}));
+        tile.appendChild(el('div', {class:'doc-post-tile-caption'}, p.caption || ''));
+        picker.appendChild(tile);
+      });
+      if(myPosts.length === 0){
+        picker.appendChild(el('div', {class:'essay-meta'}, 'You don\'t have any social posts yet.'));
+      }
+    }
+    renderPicker();
+    wrap.appendChild(picker);
+
+    page.appendChild(wrap);
+
+    function onSave(){
+      const title = titleInput.value.trim();
+      const bodyHtml = sanitizeEssayHtml(bodyEl.innerHTML);
+      const bodyText = plainTextFromHtml(bodyHtml);
+      if(!title || !bodyText.trim()){
+        alert('Please add a title and some body text before publishing.');
+        return;
+      }
+      if(saving) return;
+      saving = true;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      const cleanBib = bibliography.filter(r => (r.label && r.label.trim()) || (r.url && r.url.trim()));
+      saveEssayDoc(existingEssay, { title, bodyHtml, bibliography: cleanBib, linkedPostId, isPrivate })
+        .then(saved => { openEssayView(saved); })
+        .catch(err => {
+          saving = false;
+          saveBtn.disabled = false;
+          saveBtn.textContent = existingEssay ? 'Save changes' : 'Publish';
+          alert('Could not save: ' + err.message);
+        });
+    }
+
+    return page;
+  }
+
+  function EssayReader(essay){
+    const page = el('div', {class:'doc-page'});
+    const isOwner = state.user && essay.ownerUid === state.user.uid;
+
+    const topbar = el('div', {class:'doc-topbar'});
+    topbar.appendChild(el('button', {class:'icon-btn', title:'Back', onClick: closeEssayPage}, iconEl(ICONS.back)));
+    const rightBtns = el('div', {style:'display:flex; gap:14px; align-items:center;'});
+    if(isOwner){
+      rightBtns.appendChild(el('button', {class:'text-link', onClick: () => openEssayEdit(essay)}, 'Edit'));
+      rightBtns.appendChild(el('button', {class:'delete-btn', title:'Delete', onClick: () => deleteEssay(essay)}, iconEl(ICONS.trash)));
+    }
+    topbar.appendChild(rightBtns);
+    page.appendChild(topbar);
+
+    const wrap = el('div', {class:'doc-body-wrap'});
+    wrap.appendChild(el('div', {class:'stamp ' + (essay.private ? 'private' : 'public'), style:'margin-bottom:14px;'}, essay.private ? 'PRIVATE' : 'PUBLIC'));
+    wrap.appendChild(el('div', {class:'doc-title-display'}, essay.title));
+    const meta = el('div', {class:'essay-meta', style:'margin-bottom:30px;'});
+    meta.appendChild(AuthorLine(essay.authorName, essay.ownerUid));
+    meta.appendChild(document.createTextNode(' · ' + fmtDate(essay.createdAt)));
+    wrap.appendChild(meta);
+
+    const bodyHtml = essay.bodyHtml
+      ? sanitizeEssayHtml(essay.bodyHtml)
+      : '<p>' + (essay.body || '').replace(/</g, '&lt;') + '</p>';
+    const bodyEl = el('div', {class:'doc-read-body'});
+    bodyEl.innerHTML = bodyHtml;
+    wrap.appendChild(bodyEl);
+
+    if(essay.bibliography && essay.bibliography.length > 0){
+      wrap.appendChild(el('div', {class:'doc-section-heading'}, 'REFERENCES'));
+      const list = el('ol', {class:'doc-bib-list'});
+      essay.bibliography.forEach(ref => {
+        const li = el('li', {});
+        if(ref.url && /^https?:\/\//i.test(ref.url)){
+          li.appendChild(el('a', {href: ref.url, target:'_blank', rel:'noopener noreferrer'}, ref.label || ref.url));
+        } else {
+          li.appendChild(document.createTextNode(ref.label || ref.url || ''));
+        }
+        list.appendChild(li);
+      });
+      wrap.appendChild(list);
+    }
+
+    const linkedPost = essay.linkedPostId ? state.posts.find(p => p.id === essay.linkedPostId) : null;
+    if(linkedPost){
+      wrap.appendChild(el('div', {class:'doc-section-heading'}, 'AESTHETIC DEPICTION'));
+      const card = el('div', {class:'doc-embedded-post', onClick: () => { closeEssayPage(); }});
+      if(linkedPost.image) card.appendChild(el('img', {src: linkedPost.image, alt:'linked post'}));
+      card.appendChild(el('div', {class:'post-caption'}, linkedPost.caption));
+      card.appendChild(el('div', {class:'essay-meta', style:'margin-top:8px;'}, 'From the social feed · tap to view'));
+      wrap.appendChild(card);
+    }
+
+    page.appendChild(wrap);
+    return page;
   }
 
   function PostCard(post){
@@ -1061,6 +1563,14 @@
     timeRow.appendChild(AuthorLine(post.authorName, post.ownerUid));
     timeRow.appendChild(document.createTextNode(' · ' + fmtDate(post.createdAt)));
     card.appendChild(timeRow);
+
+    const linkedEssay = findEssayLinkedToPost(post.id);
+    if(linkedEssay){
+      card.appendChild(el('div', {class:'post-time', style:'margin-top:4px;'},
+        '📖 ',
+        el('button', {class:'inline-link', onClick: () => openEssayView(linkedEssay)}, 'Read the essay: ' + linkedEssay.title),
+      ));
+    }
     return card;
   }
 
@@ -1403,73 +1913,15 @@
   }
 
   function EssayForm(){
-    const form = el('div', {});
-    let isPrivate = false;
-    let errorEl = null;
-
-    const titleLabel = el('label', {class:'field-label'}, 'TITLE');
-    const titleInput = el('input', {type:'text', placeholder:'e.g. What is Meningitis'});
-
-    const bodyLabel = el('label', {class:'field-label'}, 'ENTRY');
-    const bodyInput = el('textarea', {placeholder:'Write your essay…'});
-
-    const toggleRow = el('div', {class:'toggle-row'});
-    const toggleLabel = el('span', {class:'toggle-row-label'}, 'PRIVATE — only visible to you, signed in');
-    const switchEl = el('div', {class:'switch'});
-    switchEl.appendChild(el('div', {class:'knob'}));
-    switchEl.addEventListener('click', () => {
-      isPrivate = !isPrivate;
-      switchEl.classList.toggle('is-private', isPrivate);
-    });
-    toggleRow.appendChild(toggleLabel);
-    toggleRow.appendChild(switchEl);
-
-    form.appendChild(titleLabel);
-    form.appendChild(titleInput);
-    form.appendChild(bodyLabel);
-    form.appendChild(bodyInput);
-    form.appendChild(toggleRow);
-
+    const wrap = el('div', {});
+    wrap.appendChild(el('div', {class:'essay-meta', style:'text-align:center; margin-bottom:20px; line-height:1.7;'},
+      'Essays now open in a full document editor — room to write, format, add references, and link a social post as its aesthetic depiction.'
+    ));
     const actions = el('div', {class:'modal-actions'});
-    const cancelBtn = el('button', {class:'btn-secondary', onClick: closeModal}, 'Cancel');
-    const saveBtn = el('button', {class:'btn-primary', onClick: async () => {
-      const title = titleInput.value.trim();
-      const body = bodyInput.value.trim();
-      if(!title || !body){
-        if(!errorEl){
-          errorEl = el('div', {class:'field-error'}, 'Title and entry text are both required.');
-          form.appendChild(errorEl);
-        }
-        return;
-      }
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
-      const uid = state.user.uid;
-      const path = isPrivate ? 'privateEssays/' + uid : 'publicEssays';
-      const newRef = db.ref(path).push();
-      try{
-        await newRef.set({
-          title, body,
-          ownerUid: uid,
-          authorName: currentAuthorName(),
-          createdAt: firebase.database.ServerValue.TIMESTAMP,
-        });
-        closeModal();
-      } catch(err){
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Publish entry';
-        if(!errorEl){
-          errorEl = el('div', {class:'field-error'});
-          form.appendChild(errorEl);
-        }
-        errorEl.textContent = 'Could not save: ' + err.message;
-      }
-    }}, 'Publish entry');
-    actions.appendChild(cancelBtn);
-    actions.appendChild(saveBtn);
-    form.appendChild(actions);
-
-    return form;
+    actions.appendChild(el('button', {class:'btn-secondary', onClick: closeModal}, 'Cancel'));
+    actions.appendChild(el('button', {class:'btn-primary', onClick: () => openEssayEdit(null)}, 'Start writing'));
+    wrap.appendChild(actions);
+    return wrap;
   }
 
   function SocialForm(){
