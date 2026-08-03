@@ -77,6 +77,23 @@
     padding:4px;
     display:flex;
     align-items:center;
+    position: relative;
+  }
+
+  .icon-badge{
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: var(--private);
+    color: var(--paper);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    line-height: 14px;
+    text-align: center;
   }
 
   .text-link{
@@ -795,6 +812,8 @@
   };
 
   let listenersAttached = { publicEssays:false, posts:false, privateEssays:null, profile:null, follows:null, followersList:null, conversations:null, thread:null };
+  let convosInitialized = false;
+  let lastKnownConvoAt = {}; // otherUid -> last seen lastAt, for detecting genuinely new incoming messages
 
   function el(tag, props, ...kids){
     const node = document.createElement(tag);
@@ -883,6 +902,13 @@
     return !!(state.myFollowing && state.myFollowing[uid]);
   }
 
+  function unreadConversationCount(){
+    if(!state.user) return 0;
+    return state.conversations.filter(c =>
+      c.lastFrom && c.lastFrom !== state.user.uid && (!c.lastReadAt || c.lastAt > c.lastReadAt)
+    ).length;
+  }
+
   function requireLogin(message){
     state.modal = 'auth';
     state.authMode = 'login';
@@ -941,6 +967,13 @@
     render();
   }
 
+  function markConversationRead(otherUid){
+    if(!state.user) return;
+    db.ref('userConversations/' + state.user.uid + '/' + otherUid + '/lastReadAt')
+      .set(firebase.database.ServerValue.TIMESTAMP)
+      .catch(() => {});
+  }
+
   function openConversation(otherUid, otherUsername){
     if(!state.user){ requireLogin('Log in to send messages.'); return; }
     if(listenersAttached.thread && listenersAttached.thread !== otherUid){
@@ -951,6 +984,7 @@
     state.activeConversationUsername = otherUsername || otherUid;
     state.messageDraft = '';
     state.modal = 'messages';
+    markConversationRead(otherUid);
     if(!listenersAttached.thread){
       listenersAttached.thread = otherUid;
       db.ref('messages/' + convoIdFor(state.user.uid, otherUid)).on('value', snap => {
@@ -991,11 +1025,11 @@
     };
     updates['userConversations/' + myUid + '/' + otherUid] = {
       lastMessage: text, lastAt: firebase.database.ServerValue.TIMESTAMP,
-      username: state.activeConversationUsername,
+      lastFrom: myUid, username: state.activeConversationUsername,
     };
     updates['userConversations/' + otherUid + '/' + myUid] = {
       lastMessage: text, lastAt: firebase.database.ServerValue.TIMESTAMP,
-      username: myName,
+      lastFrom: myUid, username: myName,
     };
     state.messageDraft = '';
     db.ref().update(updates).catch(err => {
@@ -1083,13 +1117,38 @@
       db.ref('userConversations/' + listenersAttached.conversations).off();
       listenersAttached.conversations = null;
       state.conversations = [];
+      convosInitialized = false;
+      lastKnownConvoAt = {};
     }
     if(user && !listenersAttached.conversations){
       listenersAttached.conversations = user.uid;
       db.ref('userConversations/' + user.uid).on('value', snap => {
         const obj = snap.val() || {};
-        state.conversations = Object.keys(obj).map(uid => ({ uid, ...obj[uid] }))
+        const list = Object.keys(obj).map(uid => ({ uid, ...obj[uid] }))
           .sort((a,b) => (b.lastAt||0) - (a.lastAt||0));
+
+        if(!convosInitialized){
+          // first load after login: just record where things stand, don't notify for old messages
+          list.forEach(c => { lastKnownConvoAt[c.uid] = c.lastAt || 0; });
+          convosInitialized = true;
+        } else {
+          list.forEach(c => {
+            const prev = lastKnownConvoAt.hasOwnProperty(c.uid) ? lastKnownConvoAt[c.uid] : 0;
+            const isIncoming = c.lastFrom && c.lastFrom !== user.uid;
+            const isNew = c.lastAt && c.lastAt > prev;
+            const alreadyViewingThisThread = state.modal === 'messages' && state.activeConversationUid === c.uid;
+            if(isIncoming && isNew){
+              if(alreadyViewingThisThread){
+                markConversationRead(c.uid); // seeing it live counts as read
+              } else {
+                state.banner = '✉️ New message from @' + (c.username || 'someone') + ' — ' + (c.lastMessage || '').slice(0, 60);
+              }
+            }
+            lastKnownConvoAt[c.uid] = c.lastAt || 0;
+          });
+        }
+
+        state.conversations = list;
         render();
       }, err => {
         state.banner = 'Could not load conversations: ' + err.message;
@@ -1179,11 +1238,16 @@
   }
 
   function Header(){
+    const unread = unreadConversationCount();
+    const messagesBtn = el('button', {class:'icon-btn', title:'Messages', onClick: onMessagesClick}, iconEl(ICONS.envelope));
+    if(unread > 0){
+      messagesBtn.appendChild(el('span', {class:'icon-badge'}, unread > 9 ? '9+' : String(unread)));
+    }
     return el('header', {},
       el('div', {class:'wordmark'}, 'ARCHIVES'),
       el('div', {class:'header-right'},
         el('button', {class:'icon-btn', title:'Find people', onClick: onPeopleClick}, iconEl(ICONS.search)),
-        el('button', {class:'icon-btn', title:'Messages', onClick: onMessagesClick}, iconEl(ICONS.envelope)),
+        messagesBtn,
         state.user
           ? el('button', {class:'text-link', onClick: onAccountClick}, (state.profile && state.profile.username) ? '@' + state.profile.username : 'SET USERNAME')
           : el('button', {class:'text-link', onClick: onLoginClick}, 'LOG IN'),
@@ -1998,14 +2062,18 @@
         list.appendChild(el('div', {class:'essay-meta', style:'text-align:center;'}, 'No conversations yet. Find someone and press Message.'));
       } else {
         state.conversations.forEach(convo => {
+          const unread = convo.lastFrom && state.user && convo.lastFrom !== state.user.uid && (!convo.lastReadAt || convo.lastAt > convo.lastReadAt);
           const row = el('div', {
-            style:'padding:12px 0; border-bottom:1px solid var(--hairline); cursor:pointer;',
+            style:'padding:12px 0; border-bottom:1px solid var(--hairline); cursor:pointer; display:flex; align-items:flex-start; gap:8px;',
             onClick: () => openConversation(convo.uid, convo.username),
           });
-          row.appendChild(el('div', {}, '@' + (convo.username || 'unknown')));
-          row.appendChild(el('div', {class:'essay-meta', style:'margin-top:4px;'},
+          if(unread) row.appendChild(el('span', {style:'width:8px; height:8px; border-radius:999px; background:var(--private); margin-top:6px; flex-shrink:0;'}));
+          const textCol = el('div', {});
+          textCol.appendChild(el('div', {style: unread ? 'font-weight:600;' : ''}, '@' + (convo.username || 'unknown')));
+          textCol.appendChild(el('div', {class:'essay-meta', style:'margin-top:4px;'},
             (convo.lastMessage || '').slice(0, 60) + ((convo.lastMessage||'').length > 60 ? '…' : '') + ' · ' + fmtDate(convo.lastAt)
           ));
+          row.appendChild(textCol);
           list.appendChild(row);
         });
       }
