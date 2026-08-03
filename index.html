@@ -238,6 +238,13 @@
     display:flex; align-items:center;
   }
   .heart-btn svg{ width:20px; height:20px; }
+
+  .like-count{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: -4px;
+  }
   .post-tag{
     font-family:'JetBrains Mono', monospace;
     font-size: 10px;
@@ -772,6 +779,11 @@
     openEssayId: null,
     banner: null,
     myFollowing: {},         // { targetUid: true }
+    myFollowers: {},         // { followerUid: true }
+    networkTab: 'following', // 'following' | 'followers'
+    networkFollowing: [],    // [{ uid, username }]
+    networkFollowers: [],    // [{ uid, username }]
+    networkLoading: false,
     peopleResults: [],       // [{ username, uid }]
     peopleSearched: false,
     conversations: [],       // [{ uid, username, lastMessage, lastAt }]
@@ -782,7 +794,7 @@
     page: null,               // null | { type: 'view'|'edit', essay: essayObj|null }
   };
 
-  let listenersAttached = { publicEssays:false, posts:false, privateEssays:null, profile:null, follows:null, conversations:null, thread:null };
+  let listenersAttached = { publicEssays:false, posts:false, privateEssays:null, profile:null, follows:null, followersList:null, conversations:null, thread:null };
 
   function el(tag, props, ...kids){
     const node = document.createElement(tag);
@@ -898,6 +910,35 @@
       state.banner = 'Could not unfollow: ' + err.message;
       render();
     });
+  }
+
+  const profileCache = {}; // uid -> username | null, memoized across openNetworkModal calls
+
+  function openNetworkModal(tab){
+    if(!state.user){ requireLogin('Log in to see your network.'); return; }
+    state.modal = 'network';
+    state.networkTab = tab || 'following';
+    state.networkLoading = true;
+    render();
+    loadNetworkLists();
+  }
+
+  async function loadNetworkLists(){
+    const followingUids = Object.keys(state.myFollowing || {});
+    const followerUids = Object.keys(state.myFollowers || {});
+    const uidsToFetch = [...new Set([...followingUids, ...followerUids])].filter(uid => !(uid in profileCache));
+    try{
+      const fetched = await Promise.all(uidsToFetch.map(uid =>
+        db.ref('profiles/' + uid).once('value').then(snap => ({ uid, username: (snap.val() && snap.val().username) || null }))
+      ));
+      fetched.forEach(f => { profileCache[f.uid] = f.username; });
+    } catch(err){
+      state.banner = 'Could not load some profiles: ' + err.message;
+    }
+    state.networkFollowing = followingUids.map(uid => ({ uid, username: profileCache[uid] }));
+    state.networkFollowers = followerUids.map(uid => ({ uid, username: profileCache[uid] }));
+    state.networkLoading = false;
+    render();
   }
 
   function openConversation(otherUid, otherUsername){
@@ -1020,6 +1061,23 @@
       });
     }
 
+    // attach/detach the followers-list listener for this user (who follows me)
+    if(listenersAttached.followersList && listenersAttached.followersList !== (user ? user.uid : null)){
+      db.ref('followers/' + listenersAttached.followersList).off();
+      listenersAttached.followersList = null;
+      state.myFollowers = {};
+    }
+    if(user && !listenersAttached.followersList){
+      listenersAttached.followersList = user.uid;
+      db.ref('followers/' + user.uid).on('value', snap => {
+        state.myFollowers = snap.val() || {};
+        render();
+      }, err => {
+        state.banner = 'Could not load followers: ' + err.message;
+        render();
+      });
+    }
+
     // attach/detach the conversation-index listener for this user
     if(listenersAttached.conversations && listenersAttached.conversations !== (user ? user.uid : null)){
       db.ref('userConversations/' + listenersAttached.conversations).off();
@@ -1099,6 +1157,7 @@
     if(state.modal === 'auth') app.appendChild(AuthModal());
     if(state.modal === 'settings') app.appendChild(SettingsModal());
     if(state.modal === 'people') app.appendChild(PeopleModal());
+    if(state.modal === 'network') app.appendChild(NetworkModal());
     if(state.modal === 'messages') app.appendChild(MessagesModal());
     window.scrollTo(0, scrollY);
   }
@@ -1581,9 +1640,11 @@
       card.appendChild(imgWrap);
     }
     const likedByMe = !!(post.likes && state.user && post.likes[state.user.uid]);
+    const likeCount = post.likes ? Object.keys(post.likes).length : 0;
     const isOwner = state.user && post.ownerUid === state.user.uid;
     const actions = el('div', {class:'post-actions'},
       el('button', {class:'heart-btn', onClick: () => toggleLike(post)}, iconEl(ICONS.heart(likedByMe))),
+      el('span', {class:'like-count'}, likeCount > 0 ? String(likeCount) : ''),
     );
     if(isOwner){
       actions.appendChild(el('button', {
@@ -1708,6 +1769,16 @@
     modal.appendChild(el('h2', {}, 'Settings'));
 
     modal.appendChild(el('div', {class:'essay-meta', style:'text-align:center; margin-bottom:4px;'}, state.user.email));
+
+    const networkRow = el('div', {style:'text-align:center; margin-bottom:20px;'});
+    networkRow.appendChild(el('button', {class:'inline-link', onClick: () => openNetworkModal('following')},
+      Object.keys(state.myFollowing || {}).length + ' following'
+    ));
+    networkRow.appendChild(document.createTextNode('  ·  '));
+    networkRow.appendChild(el('button', {class:'inline-link', onClick: () => openNetworkModal('followers')},
+      Object.keys(state.myFollowers || {}).length + ' followers'
+    ));
+    modal.appendChild(networkRow);
 
     let errorEl = null;
     let successEl = null;
@@ -1841,6 +1912,55 @@
     }
 
     renderResults();
+
+    const actions = el('div', {class:'modal-actions', style:'margin-top:18px;'});
+    actions.appendChild(el('button', {class:'btn-secondary', onClick: closeModal}, 'Close'));
+    modal.appendChild(actions);
+
+    overlay.appendChild(modal);
+    return overlay;
+  }
+
+  // ---------- network (following / followers) modal ----------
+  function NetworkModal(){
+    const overlay = el('div', {class:'overlay', onClick: (e) => { if(e.target === overlay) closeModal(); }});
+    const modal = el('div', {class:'modal'});
+    modal.appendChild(el('h2', {}, 'Your Network'));
+
+    const tabs = el('div', {class:'tab-row'},
+      el('button', {class:'tab-btn' + (state.networkTab === 'following' ? ' active' : ''), onClick: () => { state.networkTab = 'following'; render(); }},
+        'FOLLOWING (' + Object.keys(state.myFollowing || {}).length + ')'),
+      el('button', {class:'tab-btn' + (state.networkTab === 'followers' ? ' active' : ''), onClick: () => { state.networkTab = 'followers'; render(); }},
+        'FOLLOWERS (' + Object.keys(state.myFollowers || {}).length + ')'),
+    );
+    modal.appendChild(tabs);
+
+    const listWrap = el('div', {style:'margin-top:16px; max-height:340px; overflow-y:auto;'});
+
+    if(state.networkLoading){
+      listWrap.appendChild(el('div', {class:'essay-meta', style:'text-align:center;'}, 'loading…'));
+    } else {
+      const list = state.networkTab === 'following' ? state.networkFollowing : state.networkFollowers;
+      if(list.length === 0){
+        listWrap.appendChild(el('div', {class:'essay-meta', style:'text-align:center;'},
+          state.networkTab === 'following' ? "You aren't following anyone yet." : 'No one follows you yet.'
+        ));
+      } else {
+        list.forEach(person => {
+          const row = el('div', {style:'display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--hairline);'});
+          row.appendChild(el('span', {}, person.username ? '@' + person.username : person.uid.slice(0, 8) + '…'));
+          const btnGroup = el('div', {style:'display:flex; gap:14px;'});
+          const following = isFollowing(person.uid);
+          btnGroup.appendChild(el('button', {class:'inline-link', onClick: () => {
+            if(following) unfollowUser(person.uid); else followUser(person.uid);
+          }}, following ? 'Following' : 'Follow'));
+          btnGroup.appendChild(el('button', {class:'inline-link', onClick: () => openConversation(person.uid, person.username)}, 'Message'));
+          row.appendChild(btnGroup);
+          listWrap.appendChild(row);
+        });
+      }
+    }
+    modal.appendChild(listWrap);
 
     const actions = el('div', {class:'modal-actions', style:'margin-top:18px;'});
     actions.appendChild(el('button', {class:'btn-secondary', onClick: closeModal}, 'Close'));
