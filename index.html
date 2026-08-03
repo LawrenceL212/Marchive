@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#e7e4dc">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=Merriweather:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@400;700&family=Inter:wght@400;500;600&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 <style>
   :root{
     --paper: #e7e4dc;
@@ -806,6 +806,21 @@
     return node;
   }
 
+  const FONT_OPTIONS = [
+    { id: 'lora',         label: 'Lora (default)',   family: "'Lora', serif" },
+    { id: 'source-serif', label: 'Source Serif',      family: "'Source Serif 4', serif" },
+    { id: 'merriweather', label: 'Merriweather',      family: "'Merriweather', serif" },
+    { id: 'playfair',     label: 'Playfair Display',  family: "'Playfair Display', serif" },
+    { id: 'georgia',      label: 'Georgia',           family: "Georgia, 'Times New Roman', serif" },
+    { id: 'inter',        label: 'Inter (sans)',      family: "'Inter', -apple-system, sans-serif" },
+    { id: 'mono',         label: 'Typewriter (mono)', family: "'JetBrains Mono', monospace" },
+  ];
+
+  function fontFamilyFor(fontId){
+    const match = FONT_OPTIONS.find(f => f.id === fontId);
+    return match ? match.family : FONT_OPTIONS[0].family;
+  }
+
   const ICONS = {
     search: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/></svg>`,
     heart: (filled) => `<svg viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.7"><path d="M12 20.5s-7.5-4.6-10-9.3C0.3 8 1.6 4.6 4.8 3.6c2.2-0.7 4.4 0.2 5.7 2 .5.7 1 1.5 1.5 2.2.5-.7 1-1.5 1.5-2.2 1.3-1.8 3.5-2.7 5.7-2 3.2 1 4.5 4.4 2.8 7.6-2.5 4.7-10 9.3-10 9.3z"/></svg>`,
@@ -950,6 +965,7 @@
 
   // ---------- auth state ----------
   auth.onAuthStateChanged(user => {
+    const previousUid = state.user ? state.user.uid : null;
     state.user = user;
     state.authReady = true;
 
@@ -1022,8 +1038,8 @@
         render();
       });
     }
-    if(!user && listenersAttached.thread){
-      db.ref('messages').off();
+    if(!user && listenersAttached.thread && previousUid){
+      db.ref('messages/' + convoIdFor(previousUid, listenersAttached.thread)).off();
       listenersAttached.thread = null;
       state.activeMessages = [];
       state.activeConversationUid = null;
@@ -1069,6 +1085,7 @@
     }
     currentPageKey = null;
 
+    const scrollY = window.scrollY;
     app.innerHTML = '';
     app.appendChild(Header());
     app.appendChild(el('div', {class:'rule'}));
@@ -1083,6 +1100,7 @@
     if(state.modal === 'settings') app.appendChild(SettingsModal());
     if(state.modal === 'people') app.appendChild(PeopleModal());
     if(state.modal === 'messages') app.appendChild(MessagesModal());
+    window.scrollTo(0, scrollY);
   }
 
   function Header(){
@@ -1293,12 +1311,13 @@
     return pool.find(e => e.linkedPostId === postId) || null;
   }
 
-  function saveEssayDoc(existingEssay, { title, bodyHtml, bibliography, linkedPostId, isPrivate }){
+  function saveEssayDoc(existingEssay, { title, bodyHtml, bibliography, linkedPostId, isPrivate, bodyFont }){
     const uid = state.user.uid;
     const payload = {
       title, bodyHtml,
       bibliography: bibliography || [],
       linkedPostId: linkedPostId || null,
+      bodyFont: bodyFont || 'lora',
       ownerUid: uid,
       authorName: currentAuthorName(),
       createdAt: existingEssay ? existingEssay.createdAt : firebase.database.ServerValue.TIMESTAMP,
@@ -1331,6 +1350,7 @@
     let isPrivate = existingEssay ? !!existingEssay.private : false;
     let linkedPostId = existingEssay ? (existingEssay.linkedPostId || null) : null;
     let bibliography = existingEssay && existingEssay.bibliography ? existingEssay.bibliography.map(b => ({...b})) : [];
+    let bodyFont = existingEssay && existingEssay.bodyFont ? existingEssay.bodyFont : 'lora';
     let saving = false;
 
     // top bar
@@ -1382,6 +1402,19 @@
       },
     }, 'Link'));
     toolbar.appendChild(toolBtn('Clear', 'removeFormat'));
+
+    const fontSelect = el('select', {class:'doc-tool-btn', title:'Body font'});
+    FONT_OPTIONS.forEach(f => {
+      const opt = el('option', {value: f.id}, f.label);
+      opt.style.fontFamily = f.family;
+      if(f.id === bodyFont) opt.selected = true;
+      fontSelect.appendChild(opt);
+    });
+    fontSelect.addEventListener('change', () => {
+      bodyFont = fontSelect.value;
+      bodyEl.style.fontFamily = fontFamilyFor(bodyFont);
+    });
+    toolbar.appendChild(fontSelect);
     page.appendChild(toolbar);
 
     // body
@@ -1394,6 +1427,7 @@
 
     const bodyEl = el('div', {
       class:'doc-editable', contenteditable:'true', 'data-placeholder':'Start writing…',
+      style: 'font-family: ' + fontFamilyFor(bodyFont) + ';',
     });
     if(existingEssay){
       bodyEl.innerHTML = existingEssay.bodyHtml
@@ -1466,7 +1500,7 @@
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving…';
       const cleanBib = bibliography.filter(r => (r.label && r.label.trim()) || (r.url && r.url.trim()));
-      saveEssayDoc(existingEssay, { title, bodyHtml, bibliography: cleanBib, linkedPostId, isPrivate })
+      saveEssayDoc(existingEssay, { title, bodyHtml, bibliography: cleanBib, linkedPostId, isPrivate, bodyFont })
         .then(saved => { openEssayView(saved); })
         .catch(err => {
           saving = false;
@@ -1504,7 +1538,7 @@
     const bodyHtml = essay.bodyHtml
       ? sanitizeEssayHtml(essay.bodyHtml)
       : '<p>' + (essay.body || '').replace(/</g, '&lt;') + '</p>';
-    const bodyEl = el('div', {class:'doc-read-body'});
+    const bodyEl = el('div', {class:'doc-read-body', style:'font-family: ' + fontFamilyFor(essay.bodyFont) + ';'});
     bodyEl.innerHTML = bodyHtml;
     wrap.appendChild(bodyEl);
 
@@ -1845,7 +1879,7 @@
       modal.appendChild(actions);
     } else {
       const headRow = el('div', {style:'display:flex; align-items:center; gap:10px; margin-bottom:16px;'});
-      headRow.appendChild(el('button', {class:'icon-btn', onClick: () => { state.activeConversationUid = null; render(); }}, iconEl(ICONS.back)));
+      headRow.appendChild(el('button', {class:'icon-btn', onClick: closeConversation}, iconEl(ICONS.back)));
       headRow.appendChild(el('h2', {style:'margin:0;'}, '@' + state.activeConversationUsername));
       modal.appendChild(headRow);
 
@@ -1877,7 +1911,7 @@
       modal.appendChild(composeRow);
 
       const actions = el('div', {class:'modal-actions', style:'margin-top:14px;'});
-      actions.appendChild(el('button', {class:'btn-secondary', onClick: closeModal}, 'Close'));
+      actions.appendChild(el('button', {class:'btn-secondary', onClick: () => { closeConversation(); closeModal(); }}, 'Close'));
       modal.appendChild(actions);
 
       setTimeout(() => { thread.scrollTop = thread.scrollHeight; }, 0);
