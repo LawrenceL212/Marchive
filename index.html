@@ -1129,17 +1129,38 @@
   // ---------- render ----------
   let currentPageKey = null;
 
+  function appendOpenModal(app){
+    if(state.modal === 'compose') app.appendChild(ComposeModal());
+    if(state.modal === 'auth') app.appendChild(AuthModal());
+    if(state.modal === 'settings') app.appendChild(SettingsModal());
+    if(state.modal === 'people') app.appendChild(PeopleModal());
+    if(state.modal === 'network') app.appendChild(NetworkModal());
+    if(state.modal === 'messages') app.appendChild(MessagesModal());
+  }
+
   function render(){
     const app = document.getElementById('app');
 
-    if(state.page){
-      const key = state.page.type + ':' + (state.page.essay ? state.page.essay.id : 'new');
+    if(state.page && state.page.type === 'edit'){
+      // Freeze rebuilds only here — protects an in-progress contenteditable draft
+      // from being wiped out by an unrelated background update elsewhere in the app.
+      const key = 'edit:' + (state.page.essay ? state.page.essay.id : 'new');
       if(currentPageKey !== key){
         currentPageKey = key;
         app.innerHTML = '';
         app.appendChild(EssayPage());
       }
-      return; // skip the normal rebuild entirely while a document page is open
+      return;
+    }
+
+    if(state.page && state.page.type === 'view'){
+      // Reading has no uncommitted input to protect, so rebuild freely — this is what
+      // lets Follow/Message/likes actually reflect live while looking at an essay.
+      currentPageKey = null;
+      app.innerHTML = '';
+      app.appendChild(EssayPage());
+      appendOpenModal(app);
+      return;
     }
     currentPageKey = null;
 
@@ -1153,12 +1174,7 @@
     } else {
       app.appendChild(Main());
     }
-    if(state.modal === 'compose') app.appendChild(ComposeModal());
-    if(state.modal === 'auth') app.appendChild(AuthModal());
-    if(state.modal === 'settings') app.appendChild(SettingsModal());
-    if(state.modal === 'people') app.appendChild(PeopleModal());
-    if(state.modal === 'network') app.appendChild(NetworkModal());
-    if(state.modal === 'messages') app.appendChild(MessagesModal());
+    appendOpenModal(app);
     window.scrollTo(0, scrollY);
   }
 
