@@ -739,6 +739,7 @@
     margin-bottom: 10px;
   }
   .doc-editable{
+    position: relative;
     min-height: 320px;
     font-family: 'Lora', serif;
     font-size: 17px;
@@ -759,6 +760,7 @@
     color: var(--muted);
   }
   .doc-read-body{
+    position: relative;
     font-family: 'Lora', serif;
     font-size: 17px;
     line-height: 1.75;
@@ -788,8 +790,10 @@
   .essay-img-left{ display: block; margin-left: 0; margin-right: auto; }
   .essay-img-center{ display: block; margin-left: auto; margin-right: auto; }
   .essay-img-right{ display: block; margin-left: auto; margin-right: 0; }
-  .essay-img-front{ position: relative; z-index: 5; }
-  .essay-img-back{ position: relative; z-index: -1; }
+  .essay-img-wrap-left{ float: left; margin: 0 16px 10px 0; }
+  .essay-img-wrap-right{ float: right; margin: 0 0 10px 16px; }
+  img.essay-img-behind{ position: absolute; z-index: 0; margin: 0; }
+  img.essay-img-front{ position: absolute; z-index: 10; margin: 0; }
 
   .img-control-popover{
     position: fixed;
@@ -804,11 +808,6 @@
     z-index: 80;
     box-shadow: 0 4px 14px rgba(0,0,0,0.25);
   }
-  .img-pop-opacity{
-    width: 60px;
-    accent-color: var(--private);
-    margin: 0 4px;
-  }
   .img-resize-handle{
     position: fixed;
     display: none;
@@ -818,6 +817,21 @@
     border-radius: 50%;
     z-index: 81;
     cursor: nwse-resize;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .img-move-handle{
+    position: fixed;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    background: var(--ink);
+    color: var(--paper);
+    border: 2px solid var(--paper);
+    border-radius: 50%;
+    font-size: 11px;
+    z-index: 81;
+    cursor: move;
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
   .img-pop-btn{
@@ -1878,12 +1892,14 @@
 
   // Minimal HTML sanitizer: strips anything outside a small safelist before
   // essay bodies (which are stored as raw editor HTML) are ever injected via innerHTML.
-  const ESSAY_IMG_CLASSES = ['essay-img-s','essay-img-m','essay-img-l','essay-img-full','essay-img-left','essay-img-center','essay-img-right'];
+  const ESSAY_IMG_LAYOUT_CLASSES = ['essay-img-left','essay-img-center','essay-img-right','essay-img-wrap-left','essay-img-wrap-right','essay-img-behind','essay-img-front'];
 
-  function applyImgOpacity(container){
-    container.querySelectorAll('img[data-opacity]').forEach(img => {
-      const v = parseInt(img.getAttribute('data-opacity'), 10);
-      if(v >= 10 && v <= 100) img.style.opacity = v / 100;
+  function positionOverlapImages(container){
+    container.querySelectorAll('img.essay-img-behind, img.essay-img-front').forEach(img => {
+      const x = parseInt(img.getAttribute('data-x'), 10) || 0;
+      const y = parseInt(img.getAttribute('data-y'), 10) || 0;
+      img.style.left = x + '%';
+      img.style.top = y + '%';
     });
   }
 
@@ -1913,19 +1929,24 @@
             const alt = child.getAttribute('alt') || '';
             const classTokens = (child.getAttribute('class') || '').split(/\s+/);
             const sizeCls = classTokens.find(c => ['essay-img-s','essay-img-m','essay-img-l','essay-img-full'].includes(c));
-            const alignCls = classTokens.find(c => ['essay-img-left','essay-img-center','essay-img-right'].includes(c)) || 'essay-img-center';
-            const layerCls = classTokens.find(c => ['essay-img-front','essay-img-back'].includes(c));
+            const layoutCls = classTokens.find(c => ESSAY_IMG_LAYOUT_CLASSES.includes(c)) || 'essay-img-center';
+            const isOverlap = layoutCls === 'essay-img-behind' || layoutCls === 'essay-img-front';
             let width = parseInt(child.getAttribute('width'), 10);
             if(!(width >= 40 && width <= 2000)) width = null;
-            let opacity = parseInt(child.getAttribute('data-opacity'), 10);
-            if(!(opacity >= 10 && opacity <= 100) || opacity % 10 !== 0) opacity = null;
+            let x = parseInt(child.getAttribute('data-x'), 10);
+            let y = parseInt(child.getAttribute('data-y'), 10);
+            if(!(x >= 0 && x <= 100)) x = 0;
+            if(!(y >= 0 && y <= 100)) y = 0;
             [...child.attributes].forEach(attr => child.removeAttribute(attr.name));
             child.setAttribute('src', src);
             if(alt) child.setAttribute('alt', alt);
             const finalSizeCls = width ? '' : (sizeCls || 'essay-img-m');
-            child.setAttribute('class', [finalSizeCls, alignCls, layerCls || ''].join(' ').trim());
+            child.setAttribute('class', (finalSizeCls + ' ' + layoutCls).trim());
             if(width) child.setAttribute('width', String(width));
-            if(opacity && opacity !== 100) child.setAttribute('data-opacity', String(opacity));
+            if(isOverlap){
+              child.setAttribute('data-x', String(x));
+              child.setAttribute('data-y', String(y));
+            }
             return;
           }
           [...child.attributes].forEach(attr => {
@@ -2170,76 +2191,134 @@
     } else if(existingEssay && existingEssay.body){
       bodyEl.innerHTML = '<p>' + existingEssay.body.replace(/</g, '&lt;') + '</p>';
     }
-    applyImgOpacity(bodyEl);
+    positionOverlapImages(bodyEl);
     wrap.appendChild(bodyEl);
 
-    // ---- image control popover: click an embedded image to resize/align/remove it ----
+    // ---- image control popover: click an embedded image to resize/reposition/layout it ----
     const imgPopover = el('div', {class:'img-control-popover'});
     let popoverTargetImg = null;
     const sizeClasses = ['essay-img-s', 'essay-img-m', 'essay-img-l', 'essay-img-full'];
-    const alignClasses = ['essay-img-left', 'essay-img-center', 'essay-img-right'];
-    const layerClasses = ['essay-img-front', 'essay-img-back'];
+    const layoutClasses = ESSAY_IMG_LAYOUT_CLASSES; // left/center/right/wrap-left/wrap-right/behind/front
     const sizeBtns = {};
-    const alignBtns = {};
-    const layerBtns = {};
+    const layoutBtns = {};
 
     function refreshPopoverActiveStates(){
       if(!popoverTargetImg) return;
       Object.entries(sizeBtns).forEach(([cls, btn]) => btn.classList.toggle('active', popoverTargetImg.classList.contains(cls)));
-      Object.entries(alignBtns).forEach(([cls, btn]) => btn.classList.toggle('active', popoverTargetImg.classList.contains(cls)));
-      Object.entries(layerBtns).forEach(([cls, btn]) => btn.classList.toggle('active', popoverTargetImg.classList.contains(cls)));
-      const op = parseInt(popoverTargetImg.getAttribute('data-opacity'), 10);
-      opacitySlider.value = (op >= 10 && op <= 100) ? op : 100;
+      Object.entries(layoutBtns).forEach(([cls, btn]) => btn.classList.toggle('active', popoverTargetImg.classList.contains(cls)));
     }
-    function setImgClass(group, cls){
+    function isOverlapCls(cls){ return cls === 'essay-img-behind' || cls === 'essay-img-front'; }
+    function setImgSize(cls){
       if(!popoverTargetImg) return;
-      group.forEach(c => popoverTargetImg.classList.remove(c));
+      sizeClasses.forEach(c => popoverTargetImg.classList.remove(c));
       popoverTargetImg.classList.add(cls);
-      if(group === sizeClasses) popoverTargetImg.removeAttribute('width');
+      popoverTargetImg.removeAttribute('width');
       refreshPopoverActiveStates();
       positionResizeHandle(popoverTargetImg);
     }
-    function toggleLayer(cls){
+    function setImgLayout(cls){
       if(!popoverTargetImg) return;
-      const isActive = popoverTargetImg.classList.contains(cls);
-      layerClasses.forEach(c => popoverTargetImg.classList.remove(c));
-      if(!isActive) popoverTargetImg.classList.add(cls);
+      const img = popoverTargetImg;
+      const wasOverlap = layoutClasses.some(c => isOverlapCls(c) && img.classList.contains(c));
+      const goingOverlap = isOverlapCls(cls);
+      if(goingOverlap && !wasOverlap){
+        // capture its current in-flow position relative to bodyEl before lifting it out of the flow
+        const bw = bodyEl.clientWidth || 1, bh = bodyEl.clientHeight || 1;
+        const xPct = Math.max(0, Math.min(100, Math.round((img.offsetLeft / bw) * 100)));
+        const yPct = Math.max(0, Math.min(100, Math.round((img.offsetTop / bh) * 100)));
+        layoutClasses.forEach(c => img.classList.remove(c));
+        img.classList.add(cls);
+        img.style.left = xPct + '%';
+        img.style.top = yPct + '%';
+        img.setAttribute('data-x', String(xPct));
+        img.setAttribute('data-y', String(yPct));
+      } else if(!goingOverlap && wasOverlap){
+        layoutClasses.forEach(c => img.classList.remove(c));
+        img.classList.add(cls);
+        img.style.left = '';
+        img.style.top = '';
+        img.removeAttribute('data-x');
+        img.removeAttribute('data-y');
+      } else {
+        layoutClasses.forEach(c => img.classList.remove(c));
+        img.classList.add(cls);
+      }
       refreshPopoverActiveStates();
+      positionResizeHandle(img);
+      positionMoveHandle(img);
     }
     function popBtn(label, onClick){
       return el('button', {type:'button', class:'img-pop-btn', onMousedown:(e)=>e.preventDefault(), onClick:(e)=>{ e.preventDefault(); onClick(); }}, label);
     }
     [['S','essay-img-s'],['M','essay-img-m'],['L','essay-img-l'],['Full','essay-img-full']].forEach(([label, cls]) => {
-      const btn = popBtn(label, () => setImgClass(sizeClasses, cls));
+      const btn = popBtn(label, () => setImgSize(cls));
       sizeBtns[cls] = btn;
       imgPopover.appendChild(btn);
     });
     imgPopover.appendChild(el('div', {class:'img-pop-sep'}));
-    [['⟸','essay-img-left'],['≡','essay-img-center'],['⟹','essay-img-right']].forEach(([label, cls]) => {
-      const btn = popBtn(label, () => setImgClass(alignClasses, cls));
-      alignBtns[cls] = btn;
+    [
+      ['⟸','essay-img-left','Align left'],
+      ['≡','essay-img-center','Align center'],
+      ['⟹','essay-img-right','Align right'],
+      ['Wrap L','essay-img-wrap-left','Text wraps to the right'],
+      ['Wrap R','essay-img-wrap-right','Text wraps to the left'],
+      ['Behind','essay-img-behind','Behind the text'],
+      ['Front','essay-img-front','In front of the text'],
+    ].forEach(([label, cls, title]) => {
+      const btn = popBtn(label, () => setImgLayout(cls));
+      btn.title = title;
+      layoutBtns[cls] = btn;
       imgPopover.appendChild(btn);
     });
-    imgPopover.appendChild(el('div', {class:'img-pop-sep'}));
-    [['Front','essay-img-front'],['Back','essay-img-back']].forEach(([label, cls]) => {
-      const btn = popBtn(label, () => toggleLayer(cls));
-      layerBtns[cls] = btn;
-      imgPopover.appendChild(btn);
-    });
-    imgPopover.appendChild(el('div', {class:'img-pop-sep'}));
-    const opacitySlider = el('input', {type:'range', min:'10', max:'100', step:'10', value:'100', class:'img-pop-opacity', title:'Opacity'});
-    opacitySlider.addEventListener('input', () => {
-      if(!popoverTargetImg) return;
-      const v = parseInt(opacitySlider.value, 10);
-      popoverTargetImg.style.opacity = v / 100;
-      if(v === 100) popoverTargetImg.removeAttribute('data-opacity');
-      else popoverTargetImg.setAttribute('data-opacity', String(v));
-    });
-    imgPopover.appendChild(opacitySlider);
     imgPopover.appendChild(el('div', {class:'img-pop-sep'}));
     imgPopover.appendChild(popBtn('✕ Remove', () => {
       if(popoverTargetImg){ popoverTargetImg.remove(); hideImgPopover(); }
     }));
+
+    // move handle — only shown for Behind/Front images, since those sit outside the
+    // normal document flow and need explicit x/y placement rather than drag-to-reorder
+    const moveHandle = el('div', {class:'img-move-handle'}, '✥');
+    function positionMoveHandle(imgEl){
+      const isOverlap = layoutClasses.some(c => isOverlapCls(c) && imgEl.classList.contains(c));
+      if(!isOverlap){ moveHandle.style.display = 'none'; return; }
+      const rect = imgEl.getBoundingClientRect();
+      moveHandle.style.display = 'flex';
+      moveHandle.style.top = (rect.top - 10) + 'px';
+      moveHandle.style.left = (rect.left - 10) + 'px';
+    }
+    function moveMove(e){
+      if(!popoverTargetImg) return;
+      const p = e.touches ? e.touches[0] : e;
+      const bodyRect = bodyEl.getBoundingClientRect();
+      const bw = bodyEl.clientWidth || 1, bh = bodyEl.clientHeight || 1;
+      const xPct = Math.max(0, Math.min(100, Math.round(((p.clientX - bodyRect.left) / bw) * 100)));
+      const yPct = Math.max(0, Math.min(100, Math.round(((p.clientY - bodyRect.top) / bh) * 100)));
+      popoverTargetImg.style.left = xPct + '%';
+      popoverTargetImg.style.top = yPct + '%';
+      popoverTargetImg.setAttribute('data-x', String(xPct));
+      popoverTargetImg.setAttribute('data-y', String(yPct));
+      positionMoveHandle(popoverTargetImg);
+      positionResizeHandle(popoverTargetImg);
+      e.preventDefault();
+    }
+    function moveUp(){
+      window.removeEventListener('mousemove', moveMove);
+      window.removeEventListener('touchmove', moveMove);
+      window.removeEventListener('mouseup', moveUp);
+      window.removeEventListener('touchend', moveUp);
+    }
+    moveHandle.addEventListener('mousedown', (e) => {
+      if(!popoverTargetImg) return;
+      window.addEventListener('mousemove', moveMove);
+      window.addEventListener('mouseup', moveUp);
+      e.preventDefault();
+    });
+    moveHandle.addEventListener('touchstart', (e) => {
+      if(!popoverTargetImg) return;
+      window.addEventListener('touchmove', moveMove, {passive:false});
+      window.addEventListener('touchend', moveUp);
+      e.preventDefault();
+    }, {passive:false});
 
     const resizeHandle = el('div', {class:'img-resize-handle'});
     function positionResizeHandle(imgEl){
@@ -2292,6 +2371,7 @@
       imgPopover.style.top = Math.max(8, rect.top - 44) + 'px';
       imgPopover.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
       positionResizeHandle(imgEl);
+      positionMoveHandle(imgEl);
       refreshPopoverActiveStates();
     }
     function hideImgPopover(){
@@ -2299,17 +2379,19 @@
       popoverTargetImg = null;
       imgPopover.style.display = 'none';
       resizeHandle.style.display = 'none';
+      moveHandle.style.display = 'none';
     }
     bodyEl.addEventListener('click', (e) => {
       if(e.target.tagName === 'IMG') showImgPopover(e.target);
       else hideImgPopover();
     });
     function outsideImgClickHandler(e){
-      if(!imgPopover.contains(e.target) && e.target !== resizeHandle && e.target.tagName !== 'IMG') hideImgPopover();
+      if(!imgPopover.contains(e.target) && e.target !== resizeHandle && e.target !== moveHandle && e.target.tagName !== 'IMG') hideImgPopover();
     }
     document.addEventListener('click', outsideImgClickHandler, true);
     page.appendChild(imgPopover);
     page.appendChild(resizeHandle);
+    page.appendChild(moveHandle);
 
     if(draft){
       wrap.insertBefore(el('div', {class:'essay-meta', style:'margin-bottom:14px; color:var(--private);'},
@@ -2432,7 +2514,7 @@
       : '<p>' + (essay.body || '').replace(/</g, '&lt;') + '</p>';
     const bodyEl = el('div', {class:'doc-read-body', style:'font-family: ' + fontFamilyFor(essay.bodyFont) + ';'});
     bodyEl.innerHTML = bodyHtml;
-    applyImgOpacity(bodyEl);
+    positionOverlapImages(bodyEl);
     wrap.appendChild(bodyEl);
 
     if(essay.bibliography && essay.bibliography.length > 0){
