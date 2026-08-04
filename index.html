@@ -1488,6 +1488,24 @@
     if(state.modal === 'messages') app.appendChild(MessagesModal());
   }
 
+  function renderNormalView(){
+    const app = document.getElementById('app');
+    const scrollY = window.scrollY;
+    app.innerHTML = '';
+    app.appendChild(Header());
+    app.appendChild(el('div', {class:'rule'}));
+    app.appendChild(StatusLine());
+    if(!state.authReady){
+      app.appendChild(el('div', {class:'empty-note', style:'padding:60px 0;'}, 'connecting to archive…'));
+    } else {
+      app.appendChild(Main());
+    }
+    appendOpenModal(app);
+    window.scrollTo(0, scrollY);
+  }
+
+  let currentModalKey = null;
+
   function render(){
     const app = document.getElementById('app');
 
@@ -1514,18 +1532,21 @@
     }
     currentPageKey = null;
 
-    const scrollY = window.scrollY;
-    app.innerHTML = '';
-    app.appendChild(Header());
-    app.appendChild(el('div', {class:'rule'}));
-    app.appendChild(StatusLine());
-    if(!state.authReady){
-      app.appendChild(el('div', {class:'empty-note', style:'padding:60px 0;'}, 'connecting to archive…'));
-    } else {
-      app.appendChild(Main());
+    if(state.modal === 'compose' || state.modal === 'editPost'){
+      // Same freeze treatment as the essay editor — the post/social form holds a lot of
+      // uncommitted local state (picked photos, YouTube section, caption) that a stray
+      // background render would otherwise wipe out mid-composition.
+      const key = state.modal + ':' + state.composeTab + ':' +
+        (state.editingPost ? state.editingPost.id : (state.resumePostDraft ? state.resumePostDraft.id : 'new'));
+      if(currentModalKey !== key){
+        currentModalKey = key;
+        renderNormalView();
+      }
+      return;
     }
-    appendOpenModal(app);
-    window.scrollTo(0, scrollY);
+    currentModalKey = null;
+
+    renderNormalView();
   }
 
   function Header(){
