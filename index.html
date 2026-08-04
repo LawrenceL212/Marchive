@@ -808,6 +808,9 @@
 </style>
 <div id="app"></div>
 
+<!-- YouTube IFrame Player API — needed to control looping a specific section, not just embed -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
 <!-- Firebase SDKs (compat build — plain <script> tags, no bundler needed) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
@@ -1404,7 +1407,75 @@
 
   // ---------- render ----------
   let currentPageKey = null;
-  let currentlyPlayingAudio = null; // the <audio> element currently unmuted, if any
+  let currentlyPlayingAudio = null; // the <audio> element or YT player wrapper currently unmuted, if any
+
+  // Builds a speaker icon button wired to any {mute, unmute, isMuted} controller —
+  // shared by both native <audio> posts and YouTube-backed posts.
+  function soundToggleButton(controller){
+    const btn = el('button', {type:'button', class:'sound-toggle-btn'}, iconEl(ICONS.speakerOff));
+    function refreshIcon(){
+      btn.innerHTML = '';
+      btn.appendChild(iconEl(controller.isMuted() ? ICONS.speakerOff : ICONS.speakerOn));
+    }
+    btn.addEventListener('click', () => {
+      if(controller.isMuted()){
+        if(currentlyPlayingAudio && currentlyPlayingAudio !== controller) currentlyPlayingAudio.mute();
+        currentlyPlayingAudio = controller;
+        controller.unmute();
+      } else {
+        controller.mute();
+        if(currentlyPlayingAudio === controller) currentlyPlayingAudio = null;
+      }
+      refreshIcon();
+    });
+    refreshIcon();
+    return btn;
+  }
+
+  // ---------- YouTube IFrame API readiness ----------
+  let ytApiReady = false;
+  let ytReadyQueue = [];
+  window.onYouTubeIframeAPIReady = function(){
+    ytApiReady = true;
+    ytReadyQueue.forEach(fn => fn());
+    ytReadyQueue = [];
+  };
+  function whenYtReady(fn){
+    if(ytApiReady && window.YT && window.YT.Player) fn();
+    else ytReadyQueue.push(fn);
+  }
+
+  function parseYouTubeId(url){
+    if(!url) return null;
+    const patterns = [
+      /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    ];
+    for(const p of patterns){
+      const m = url.match(p);
+      if(m) return m[1];
+    }
+    return null;
+  }
+
+  function parseTimeToSeconds(str){
+    if(!str || !str.trim()) return null;
+    const parts = str.trim().split(':').map(s => parseInt(s, 10));
+    if(parts.some(isNaN)) return null;
+    if(parts.length === 1) return parts[0];
+    if(parts.length === 2) return parts[0] * 60 + parts[1];
+    if(parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return null;
+  }
+
+  function formatSecondsAsTime(sec){
+    if(sec === null || sec === undefined) return '';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + String(s).padStart(2, '0');
+  }
 
   function appendOpenModal(app){
     if(state.modal === 'compose') app.appendChild(ComposeModal());
@@ -2032,23 +2103,14 @@
       audioEl.muted = true;
       audioEl.onerror = () => { audioWrap.style.display = 'none'; };
 
-      const soundBtn = el('button', {type:'button', class:'sound-toggle-btn'}, iconEl(ICONS.speakerOff));
-      function refreshSoundIcon(){
-        soundBtn.innerHTML = '';
-        soundBtn.appendChild(iconEl(audioEl.muted ? ICONS.speakerOff : ICONS.speakerOn));
-      }
-      soundBtn.addEventListener('click', () => {
-        audioEl.muted = !audioEl.muted;
-        if(!audioEl.muted){
-          if(currentlyPlayingAudio && currentlyPlayingAudio !== audioEl){
-            currentlyPlayingAudio.muted = true;
-          }
-          currentlyPlayingAudio = audioEl;
-          audioEl.play().catch(() => {});
-        }
-        refreshSoundIcon();
-      });
-      refreshSoundIcon();
+      const controller = {
+        mute: () => { audioEl.muted = true; },
+        unmute: () => { audioEl.muted = false; audioEl.play().catch(() => {}); },
+        isMuted: () => audioEl.muted,
+        play: () => audioEl.play().catch(() => {}),
+        pause: () => audioEl.pause(),
+      };
+      const soundBtn = soundToggleButton(controller);
 
       audioWrap.appendChild(audioEl);
       audioWrap.appendChild(soundBtn);
@@ -2056,13 +2118,60 @@
 
       if('IntersectionObserver' in window){
         const observer = new IntersectionObserver((entries) => {
-          entries.forEach(entry => {
-            if(entry.isIntersecting){
-              audioEl.play().catch(() => {});
-            } else {
-              audioEl.pause();
-            }
-          });
+          entries.forEach(entry => { entry.isIntersecting ? controller.play() : controller.pause(); });
+        }, { threshold: 0.6 });
+        observer.observe(card);
+      }
+    } else if(post.youtubeId){
+      const audioWrap = el('div', {class:'post-audio-wrap'});
+      if(post.audioTitle){
+        audioWrap.appendChild(el('div', {class:'post-audio-title'}, '♪ ' + post.audioTitle));
+      }
+      const ytMount = el('div', {style:'position:absolute; left:-9999px; width:2px; height:2px;'});
+      card.appendChild(ytMount);
+
+      let ytPlayer = null;
+      let loopTimer = null;
+      let pendingPlay = false; // becomes true if scrolled into view before the player is ready
+      const start = post.youtubeStart || 0;
+      const end = post.youtubeEnd || null;
+
+      const controller = {
+        mute: () => { if(ytPlayer && ytPlayer.mute) ytPlayer.mute(); },
+        unmute: () => {
+          if(ytPlayer && ytPlayer.unMute){ ytPlayer.unMute(); ytPlayer.playVideo(); }
+        },
+        isMuted: () => !ytPlayer || !ytPlayer.isMuted || ytPlayer.isMuted(),
+        play: () => { if(ytPlayer) ytPlayer.playVideo(); else pendingPlay = true; },
+        pause: () => { if(ytPlayer) ytPlayer.pauseVideo(); pendingPlay = false; },
+      };
+      const soundBtn = soundToggleButton(controller);
+      audioWrap.appendChild(soundBtn);
+      card.appendChild(audioWrap);
+
+      whenYtReady(() => {
+        ytPlayer = new YT.Player(ytMount, {
+          videoId: post.youtubeId,
+          playerVars: { start, controls: 0, disablekb: 1, modestbranding: 1, playsinline: 1 },
+          events: {
+            onReady: (e) => {
+              e.target.mute();
+              if(pendingPlay) e.target.playVideo();
+              loopTimer = setInterval(() => {
+                if(!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+                if(end && ytPlayer.getCurrentTime() >= end) ytPlayer.seekTo(start, true);
+              }, 300);
+            },
+            onStateChange: (e) => {
+              if(e.data === YT.PlayerState.ENDED) e.target.seekTo(start, true) && e.target.playVideo();
+            },
+          },
+        });
+      });
+
+      if('IntersectionObserver' in window){
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => { entry.isIntersecting ? controller.play() : controller.pause(); });
         }, { threshold: 0.6 });
         observer.observe(card);
       }
@@ -2720,15 +2829,27 @@
     // ---- music (optional, one track) ----
     form.appendChild(el('div', {class:'doc-section-heading', style:'margin:24px 0 10px;'}, 'MUSIC (optional)'));
     let audioEntry = draft && draft.audioUrl ? { type:'url', url: draft.audioUrl } : null; // { type:'file', file } | { type:'url', url }
+    let youtubeId = (draft && draft.youtubeId) || null;
+    let youtubeStart = (draft && draft.youtubeStart) || 0;
+    let youtubeEnd = (draft && draft.youtubeEnd) || null;
+    let musicSource = youtubeId ? 'youtube' : 'upload'; // 'upload' | 'youtube' — mutually exclusive
 
+    const musicTabs = el('div', {class:'tab-row'});
+    const uploadTabBtn = el('button', {class:'tab-btn' + (musicSource === 'upload' ? ' active' : ''), onClick: () => { musicSource = 'upload'; youtubeId = null; renderMusicSource(); }}, 'UPLOAD / LINK');
+    const youtubeTabBtn = el('button', {class:'tab-btn' + (musicSource === 'youtube' ? ' active' : ''), onClick: () => { musicSource = 'youtube'; audioEntry = null; renderMusicSource(); }}, 'YOUTUBE');
+    musicTabs.appendChild(uploadTabBtn);
+    musicTabs.appendChild(youtubeTabBtn);
+    form.appendChild(musicTabs);
+
+    const musicSourceSlot = el('div', {style:'margin-top:12px;'});
+    form.appendChild(musicSourceSlot);
+
+    // ---- upload / direct link sub-panel ----
     const audioFileInput = el('input', {type:'file', accept:'audio/*'});
     const audioStatus = el('span', {class:'image-picker-status'}, audioEntry ? 'Linked track' : 'No track chosen');
     const audioPickBtn = el('button', {type:'button', class:'image-picker-btn', onClick: (e) => { e.preventDefault(); audioFileInput.click(); }}, 'Choose Audio');
     const audioPicker = el('div', {class:'image-picker'}, audioPickBtn, audioStatus, audioFileInput);
-    form.appendChild(audioPicker);
-
     const audioPreviewSlot = el('div', {style:'margin-top:10px;'});
-    form.appendChild(audioPreviewSlot);
 
     function renderAudioPreview(){
       audioPreviewSlot.innerHTML = '';
@@ -2771,12 +2892,77 @@
     }}, 'Add');
     audioUrlRow.appendChild(audioUrlInput);
     audioUrlRow.appendChild(audioUrlAddBtn);
-    form.appendChild(audioUrlRow);
+
+    // ---- YouTube sub-panel ----
+    const ytUrlRow = el('div', {style:'display:flex; gap:8px;'});
+    const ytUrlInput = el('input', {type:'url', placeholder:'Paste a YouTube link…', style:'flex:1;'});
+    const ytLoadBtn = el('button', {type:'button', class:'image-picker-btn', onClick: (e) => {
+      e.preventDefault();
+      const id = parseYouTubeId(ytUrlInput.value.trim());
+      if(!id){ ytStatus.textContent = 'Could not read a video from that link'; return; }
+      youtubeId = id;
+      youtubeStart = 0;
+      youtubeEnd = null;
+      startInput.value = '0:00';
+      endInput.value = '';
+      renderYtPreview();
+    }}, 'Load');
+    ytUrlRow.appendChild(ytUrlInput);
+    ytUrlRow.appendChild(ytLoadBtn);
+
+    const ytStatus = el('div', {class:'essay-meta', style:'margin-top:6px;'}, '');
+    const ytPreviewSlot = el('div', {style:'margin-top:10px;'});
+
+    const timeRow = el('div', {style:'display:flex; gap:10px; margin-top:12px;'});
+    const startInput = el('input', {type:'text', placeholder:'Start (m:ss)', style:'flex:1;', value: youtubeStart ? formatSecondsAsTime(youtubeStart) : ''});
+    const endInput = el('input', {type:'text', placeholder:'End (m:ss, optional)', style:'flex:1;', value: youtubeEnd ? formatSecondsAsTime(youtubeEnd) : ''});
+    startInput.addEventListener('input', () => { youtubeStart = parseTimeToSeconds(startInput.value) || 0; });
+    endInput.addEventListener('input', () => { youtubeEnd = parseTimeToSeconds(endInput.value); });
+    timeRow.appendChild(startInput);
+    timeRow.appendChild(endInput);
+
+    function renderYtPreview(){
+      ytPreviewSlot.innerHTML = '';
+      ytStatus.textContent = '';
+      if(!youtubeId) return;
+      const row = el('div', {style:'display:flex; gap:10px; align-items:center;'});
+      row.appendChild(el('img', {src: 'https://img.youtube.com/vi/' + youtubeId + '/mqdefault.jpg', alt:'video thumbnail', style:'width:100px; height:56px; object-fit:cover; border:1px solid var(--hairline);'}));
+      row.appendChild(el('button', {type:'button', class:'delete-btn', style:'margin-left:0;', title:'Remove', onClick: () => {
+        youtubeId = null;
+        ytUrlInput.value = '';
+        renderYtPreview();
+      }}, iconEl(ICONS.trash)));
+      ytPreviewSlot.appendChild(row);
+      fetch('https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + youtubeId + '&format=json')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if(data && data.title){ ytStatus.textContent = data.title; if(!audioTrackTitleInput.value.trim()) audioTrackTitleInput.value = data.title; } })
+        .catch(() => {});
+    }
+
+    function renderMusicSource(){
+      uploadTabBtn.classList.toggle('active', musicSource === 'upload');
+      youtubeTabBtn.classList.toggle('active', musicSource === 'youtube');
+      musicSourceSlot.innerHTML = '';
+      if(musicSource === 'upload'){
+        musicSourceSlot.appendChild(audioPicker);
+        musicSourceSlot.appendChild(audioPreviewSlot);
+        musicSourceSlot.appendChild(el('div', {class:'or-divider'}, '— OR ADD BY URL —'));
+        musicSourceSlot.appendChild(audioUrlRow);
+        renderAudioPreview();
+      } else {
+        musicSourceSlot.appendChild(ytUrlRow);
+        musicSourceSlot.appendChild(ytStatus);
+        musicSourceSlot.appendChild(ytPreviewSlot);
+        musicSourceSlot.appendChild(el('div', {class:'essay-meta', style:'margin-top:10px;'}, 'Pick a section to loop — leave End blank to loop the whole video.'));
+        musicSourceSlot.appendChild(timeRow);
+        renderYtPreview();
+      }
+    }
+    renderMusicSource();
 
     const audioTrackTitleInput = el('input', {type:'text', placeholder:'Track title (optional)', style:'margin-top:8px;'});
     audioTrackTitleInput.value = (draft && draft.audioTitle) || '';
     form.appendChild(audioTrackTitleInput);
-    renderAudioPreview();
 
     const capLabel = el('label', {class:'field-label'}, 'CAPTION');
     const capInput = el('textarea', {placeholder:'Say something nerdy…', style:'min-height:70px;'});
@@ -2793,7 +2979,7 @@
     form.appendChild(note);
 
     function hasMeaningfulPostContent(){
-      return !!(capInput.value.trim() || images.some(i => i.type === 'url') || (audioEntry && audioEntry.type === 'url'));
+      return !!(capInput.value.trim() || images.some(i => i.type === 'url') || (audioEntry && audioEntry.type === 'url') || youtubeId);
     }
 
     function snapshotPostDraft(){
@@ -2803,6 +2989,7 @@
         imageUrls: images.filter(i => i.type === 'url').map(i => i.url),
         audioUrl: audioEntry && audioEntry.type === 'url' ? audioEntry.url : null,
         audioTitle: audioTrackTitleInput.value.trim(),
+        youtubeId, youtubeStart, youtubeEnd,
         visibility,
       };
     }
@@ -2893,7 +3080,10 @@
           image: orderedImageUrls[0] || '', // kept for backward compatibility with older code paths
           caption,
           audioUrl: audioUrl || null,
-          audioTitle: audioUrl ? (audioTitle || null) : null,
+          audioTitle: (audioUrl || youtubeId) ? (audioTitle || null) : null,
+          youtubeId: youtubeId || null,
+          youtubeStart: youtubeId ? (youtubeStart || 0) : null,
+          youtubeEnd: youtubeId ? (youtubeEnd || null) : null,
           visibility,
           ownerUid: uid,
           authorName: currentAuthorName(),
