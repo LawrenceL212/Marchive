@@ -794,6 +794,12 @@
   .essay-img-wrap-right{ float: right; margin: 0 0 10px 16px; }
   img.essay-img-behind{ position: absolute; z-index: 0; margin: 0; }
   img.essay-img-front{ position: absolute; z-index: 10; margin: 0; }
+  .doc-editable img[data-crop="square"], .doc-read-body img[data-crop="square"]{ aspect-ratio: 1/1; object-fit: cover; }
+  .doc-editable img[data-crop="4-3"], .doc-read-body img[data-crop="4-3"]{ aspect-ratio: 4/3; object-fit: cover; }
+  .doc-editable img[data-crop="16-9"], .doc-read-body img[data-crop="16-9"]{ aspect-ratio: 16/9; object-fit: cover; }
+  .doc-editable img[data-crop="3-4"], .doc-read-body img[data-crop="3-4"]{ aspect-ratio: 3/4; object-fit: cover; }
+  .doc-editable img[data-crop]{ cursor: move; }
+  .doc-editable img.essay-img-behind, .doc-editable img.essay-img-front{ cursor: move; }
 
   .img-control-popover{
     position: fixed;
@@ -817,21 +823,6 @@
     border-radius: 50%;
     z-index: 81;
     cursor: nwse-resize;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  }
-  .img-move-handle{
-    position: fixed;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    width: 22px; height: 22px;
-    background: var(--ink);
-    color: var(--paper);
-    border: 2px solid var(--paper);
-    border-radius: 50%;
-    font-size: 11px;
-    z-index: 81;
-    cursor: move;
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
   .img-pop-btn{
@@ -1893,6 +1884,16 @@
   // Minimal HTML sanitizer: strips anything outside a small safelist before
   // essay bodies (which are stored as raw editor HTML) are ever injected via innerHTML.
   const ESSAY_IMG_LAYOUT_CLASSES = ['essay-img-left','essay-img-center','essay-img-right','essay-img-wrap-left','essay-img-wrap-right','essay-img-behind','essay-img-front'];
+  const ESSAY_IMG_CROP_RATIOS = ['free','square','4-3','16-9','3-4'];
+
+  function applyImgCropFocal(container){
+    container.querySelectorAll('img[data-crop]').forEach(img => {
+      const x = parseInt(img.getAttribute('data-focal-x'), 10);
+      const y = parseInt(img.getAttribute('data-focal-y'), 10);
+      img.style.objectPosition = (x >= 0 && x <= 100 ? x : 50) + '% ' + (y >= 0 && y <= 100 ? y : 50) + '%';
+      img.draggable = false;
+    });
+  }
 
   function positionOverlapImages(container){
     container.querySelectorAll('img.essay-img-behind, img.essay-img-front').forEach(img => {
@@ -1900,6 +1901,7 @@
       const y = parseInt(img.getAttribute('data-y'), 10) || 0;
       img.style.left = x + '%';
       img.style.top = y + '%';
+      img.draggable = false;
     });
   }
 
@@ -1937,6 +1939,12 @@
             let y = parseInt(child.getAttribute('data-y'), 10);
             if(!(x >= 0 && x <= 100)) x = 0;
             if(!(y >= 0 && y <= 100)) y = 0;
+            let crop = child.getAttribute('data-crop');
+            if(!ESSAY_IMG_CROP_RATIOS.includes(crop)) crop = 'free';
+            let focalX = parseInt(child.getAttribute('data-focal-x'), 10);
+            let focalY = parseInt(child.getAttribute('data-focal-y'), 10);
+            if(!(focalX >= 0 && focalX <= 100)) focalX = 50;
+            if(!(focalY >= 0 && focalY <= 100)) focalY = 50;
             [...child.attributes].forEach(attr => child.removeAttribute(attr.name));
             child.setAttribute('src', src);
             if(alt) child.setAttribute('alt', alt);
@@ -1946,6 +1954,11 @@
             if(isOverlap){
               child.setAttribute('data-x', String(x));
               child.setAttribute('data-y', String(y));
+            }
+            if(crop !== 'free'){
+              child.setAttribute('data-crop', crop);
+              child.setAttribute('data-focal-x', String(focalX));
+              child.setAttribute('data-focal-y', String(focalY));
             }
             return;
           }
@@ -2128,16 +2141,17 @@
       onMousedown: (e) => e.preventDefault(),
       onClick: () => { saveSelection(); imgFileInput.click(); },
     }, 'Image');
-    imgFileInput.addEventListener('change', () => {
-      const file = imgFileInput.files && imgFileInput.files[0];
-      imgFileInput.value = '';
+
+    function uploadAndInsertImage(file){
       if(!file || uploadingImage) return;
       if(!file.type.startsWith('image/')){ alert('Please choose an image file.'); return; }
       if(file.size > 8 * 1024 * 1024){ alert('Image too large (max 8MB).'); return; }
       uploadingImage = true;
       imgToolBtn.textContent = 'Uploading…';
       imgToolBtn.disabled = true;
-      const path = 'posts/' + state.user.uid + '/' + Date.now() + '_essayimg_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const ext = (file.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+      const safeName = (file.name && file.name !== 'image.png') ? file.name.replace(/[^a-zA-Z0-9._-]/g, '_') : ('pasted_' + Date.now() + '.' + ext);
+      const path = 'posts/' + state.user.uid + '/' + Date.now() + '_essayimg_' + safeName;
       storage.ref(path).put(file).then(snap => snap.ref.getDownloadURL()).then(url => {
         insertImageAtCursor(url);
       }).catch(err => {
@@ -2147,18 +2161,14 @@
         imgToolBtn.textContent = 'Image';
         imgToolBtn.disabled = false;
       });
+    }
+    imgFileInput.addEventListener('change', () => {
+      const file = imgFileInput.files && imgFileInput.files[0];
+      imgFileInput.value = '';
+      uploadAndInsertImage(file);
     });
     toolbar.appendChild(imgToolBtn);
     toolbar.appendChild(imgFileInput);
-    toolbar.appendChild(el('button', {
-      class:'doc-tool-btn', type:'button',
-      onMousedown: (e) => e.preventDefault(),
-      onClick: () => {
-        saveSelection();
-        const url = prompt('Image URL (https://…)');
-        if(url && /^https:\/\//i.test(url)) insertImageAtCursor(url);
-      },
-    }, 'Image URL'));
 
     const fontSelect = el('select', {class:'doc-tool-btn', title:'Body font'});
     FONT_OPTIONS.forEach(f => {
@@ -2192,7 +2202,20 @@
       bodyEl.innerHTML = '<p>' + existingEssay.body.replace(/</g, '&lt;') + '</p>';
     }
     positionOverlapImages(bodyEl);
+    applyImgCropFocal(bodyEl);
     wrap.appendChild(bodyEl);
+
+    // Ctrl+V / Cmd+V with an image on the clipboard — e.g. "Copy Image" from Pinterest,
+    // a screenshot, or any other app — uploads it the same way the Image button does.
+    bodyEl.addEventListener('paste', (e) => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      let imageItem = null;
+      for(const item of items){ if(item.type && item.type.startsWith('image/')){ imageItem = item; break; } }
+      if(!imageItem) return; // no image on the clipboard — let normal text paste happen
+      e.preventDefault();
+      saveSelection();
+      uploadAndInsertImage(imageItem.getAsFile());
+    });
 
     // ---- image control popover: click an embedded image to resize/reposition/layout it ----
     const imgPopover = el('div', {class:'img-control-popover'});
@@ -2206,8 +2229,94 @@
       if(!popoverTargetImg) return;
       Object.entries(sizeBtns).forEach(([cls, btn]) => btn.classList.toggle('active', popoverTargetImg.classList.contains(cls)));
       Object.entries(layoutBtns).forEach(([cls, btn]) => btn.classList.toggle('active', popoverTargetImg.classList.contains(cls)));
+      const curCrop = popoverTargetImg.getAttribute('data-crop') || 'free';
+      Object.entries(cropBtns).forEach(([ratio, btn]) => btn.classList.toggle('active', ratio === curCrop));
     }
     function isOverlapCls(cls){ return cls === 'essay-img-behind' || cls === 'essay-img-front'; }
+    function updateImgDraggable(img){
+      const isOverlap = layoutClasses.some(c => isOverlapCls(c) && img.classList.contains(c));
+      const hasCrop = img.hasAttribute('data-crop');
+      img.draggable = !(isOverlap || hasCrop); // custom drag takes over for these; native reorder-drag otherwise
+    }
+    function setImgCrop(ratio){
+      if(!popoverTargetImg) return;
+      const img = popoverTargetImg;
+      if(ratio === 'free'){
+        img.removeAttribute('data-crop');
+        img.removeAttribute('data-focal-x');
+        img.removeAttribute('data-focal-y');
+        img.style.objectPosition = '';
+      } else {
+        img.setAttribute('data-crop', ratio);
+        if(!img.hasAttribute('data-focal-x')){ img.setAttribute('data-focal-x', '50'); img.setAttribute('data-focal-y', '50'); }
+        img.style.objectPosition = img.getAttribute('data-focal-x') + '% ' + img.getAttribute('data-focal-y') + '%';
+      }
+      updateImgDraggable(img);
+      refreshPopoverActiveStates();
+      positionResizeHandle(img);
+    }
+
+    // Dragging directly on the image itself repositions it: if it's set to Behind/Front,
+    // dragging moves its x/y placement; if it has a crop ratio, dragging adjusts which
+    // part of the photo shows. Plain inline/wrap images keep the browser's native
+    // drag-to-reorder behavior, so this only takes over when one of those modes is active.
+    let draggedImg = null;
+    let dragMode = null; // 'position' | 'crop'
+    let dragStartClientX = 0, dragStartClientY = 0, dragStartFocalX = 50, dragStartFocalY = 50;
+    function imgDragMove(e){
+      if(!draggedImg) return;
+      const p = e.touches ? e.touches[0] : e;
+      if(dragMode === 'position'){
+        const bodyRect = bodyEl.getBoundingClientRect();
+        const bw = bodyEl.clientWidth || 1, bh = bodyEl.clientHeight || 1;
+        const xPct = Math.max(0, Math.min(100, Math.round(((p.clientX - bodyRect.left) / bw) * 100)));
+        const yPct = Math.max(0, Math.min(100, Math.round(((p.clientY - bodyRect.top) / bh) * 100)));
+        draggedImg.style.left = xPct + '%';
+        draggedImg.style.top = yPct + '%';
+        draggedImg.setAttribute('data-x', String(xPct));
+        draggedImg.setAttribute('data-y', String(yPct));
+        if(draggedImg === popoverTargetImg) positionResizeHandle(draggedImg);
+      } else if(dragMode === 'crop'){
+        const rect = draggedImg.getBoundingClientRect();
+        const dx = p.clientX - dragStartClientX;
+        const dy = p.clientY - dragStartClientY;
+        const fx = Math.max(0, Math.min(100, Math.round(dragStartFocalX - (dx / rect.width) * 100)));
+        const fy = Math.max(0, Math.min(100, Math.round(dragStartFocalY - (dy / rect.height) * 100)));
+        draggedImg.setAttribute('data-focal-x', String(fx));
+        draggedImg.setAttribute('data-focal-y', String(fy));
+        draggedImg.style.objectPosition = fx + '% ' + fy + '%';
+      }
+      e.preventDefault();
+    }
+    function imgDragUp(){
+      draggedImg = null;
+      dragMode = null;
+      window.removeEventListener('mousemove', imgDragMove);
+      window.removeEventListener('touchmove', imgDragMove);
+      window.removeEventListener('mouseup', imgDragUp);
+      window.removeEventListener('touchend', imgDragUp);
+    }
+    function imgDragDown(e){
+      const img = e.target;
+      if(img.tagName !== 'IMG') return;
+      const isOverlap = layoutClasses.some(c => isOverlapCls(c) && img.classList.contains(c));
+      const hasCrop = img.hasAttribute('data-crop');
+      if(!isOverlap && !hasCrop) return; // let the browser's native drag-to-reorder handle it
+      draggedImg = img;
+      dragMode = isOverlap ? 'position' : 'crop';
+      const p = e.touches ? e.touches[0] : e;
+      dragStartClientX = p.clientX; dragStartClientY = p.clientY;
+      dragStartFocalX = parseInt(img.getAttribute('data-focal-x'), 10) || 50;
+      dragStartFocalY = parseInt(img.getAttribute('data-focal-y'), 10) || 50;
+      window.addEventListener('mousemove', imgDragMove);
+      window.addEventListener('touchmove', imgDragMove, {passive:false});
+      window.addEventListener('mouseup', imgDragUp);
+      window.addEventListener('touchend', imgDragUp);
+      e.preventDefault();
+    }
+    bodyEl.addEventListener('mousedown', imgDragDown);
+    bodyEl.addEventListener('touchstart', imgDragDown, {passive:false});
+
     function setImgSize(cls){
       if(!popoverTargetImg) return;
       sizeClasses.forEach(c => popoverTargetImg.classList.remove(c));
@@ -2243,9 +2352,9 @@
         layoutClasses.forEach(c => img.classList.remove(c));
         img.classList.add(cls);
       }
+      updateImgDraggable(img);
       refreshPopoverActiveStates();
       positionResizeHandle(img);
-      positionMoveHandle(img);
     }
     function popBtn(label, onClick){
       return el('button', {type:'button', class:'img-pop-btn', onMousedown:(e)=>e.preventDefault(), onClick:(e)=>{ e.preventDefault(); onClick(); }}, label);
@@ -2271,54 +2380,16 @@
       imgPopover.appendChild(btn);
     });
     imgPopover.appendChild(el('div', {class:'img-pop-sep'}));
+    const cropBtns = {};
+    [['Free','free'],['1:1','square'],['4:3','4-3'],['16:9','16-9'],['3:4','3-4']].forEach(([label, ratio]) => {
+      const btn = popBtn(label, () => setImgCrop(ratio));
+      cropBtns[ratio] = btn;
+      imgPopover.appendChild(btn);
+    });
+    imgPopover.appendChild(el('div', {class:'img-pop-sep'}));
     imgPopover.appendChild(popBtn('✕ Remove', () => {
       if(popoverTargetImg){ popoverTargetImg.remove(); hideImgPopover(); }
     }));
-
-    // move handle — only shown for Behind/Front images, since those sit outside the
-    // normal document flow and need explicit x/y placement rather than drag-to-reorder
-    const moveHandle = el('div', {class:'img-move-handle'}, '✥');
-    function positionMoveHandle(imgEl){
-      const isOverlap = layoutClasses.some(c => isOverlapCls(c) && imgEl.classList.contains(c));
-      if(!isOverlap){ moveHandle.style.display = 'none'; return; }
-      const rect = imgEl.getBoundingClientRect();
-      moveHandle.style.display = 'flex';
-      moveHandle.style.top = (rect.top - 10) + 'px';
-      moveHandle.style.left = (rect.left - 10) + 'px';
-    }
-    function moveMove(e){
-      if(!popoverTargetImg) return;
-      const p = e.touches ? e.touches[0] : e;
-      const bodyRect = bodyEl.getBoundingClientRect();
-      const bw = bodyEl.clientWidth || 1, bh = bodyEl.clientHeight || 1;
-      const xPct = Math.max(0, Math.min(100, Math.round(((p.clientX - bodyRect.left) / bw) * 100)));
-      const yPct = Math.max(0, Math.min(100, Math.round(((p.clientY - bodyRect.top) / bh) * 100)));
-      popoverTargetImg.style.left = xPct + '%';
-      popoverTargetImg.style.top = yPct + '%';
-      popoverTargetImg.setAttribute('data-x', String(xPct));
-      popoverTargetImg.setAttribute('data-y', String(yPct));
-      positionMoveHandle(popoverTargetImg);
-      positionResizeHandle(popoverTargetImg);
-      e.preventDefault();
-    }
-    function moveUp(){
-      window.removeEventListener('mousemove', moveMove);
-      window.removeEventListener('touchmove', moveMove);
-      window.removeEventListener('mouseup', moveUp);
-      window.removeEventListener('touchend', moveUp);
-    }
-    moveHandle.addEventListener('mousedown', (e) => {
-      if(!popoverTargetImg) return;
-      window.addEventListener('mousemove', moveMove);
-      window.addEventListener('mouseup', moveUp);
-      e.preventDefault();
-    });
-    moveHandle.addEventListener('touchstart', (e) => {
-      if(!popoverTargetImg) return;
-      window.addEventListener('touchmove', moveMove, {passive:false});
-      window.addEventListener('touchend', moveUp);
-      e.preventDefault();
-    }, {passive:false});
 
     const resizeHandle = el('div', {class:'img-resize-handle'});
     function positionResizeHandle(imgEl){
@@ -2371,7 +2442,6 @@
       imgPopover.style.top = Math.max(8, rect.top - 44) + 'px';
       imgPopover.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
       positionResizeHandle(imgEl);
-      positionMoveHandle(imgEl);
       refreshPopoverActiveStates();
     }
     function hideImgPopover(){
@@ -2379,19 +2449,17 @@
       popoverTargetImg = null;
       imgPopover.style.display = 'none';
       resizeHandle.style.display = 'none';
-      moveHandle.style.display = 'none';
     }
     bodyEl.addEventListener('click', (e) => {
       if(e.target.tagName === 'IMG') showImgPopover(e.target);
       else hideImgPopover();
     });
     function outsideImgClickHandler(e){
-      if(!imgPopover.contains(e.target) && e.target !== resizeHandle && e.target !== moveHandle && e.target.tagName !== 'IMG') hideImgPopover();
+      if(!imgPopover.contains(e.target) && e.target !== resizeHandle && e.target.tagName !== 'IMG') hideImgPopover();
     }
     document.addEventListener('click', outsideImgClickHandler, true);
     page.appendChild(imgPopover);
     page.appendChild(resizeHandle);
-    page.appendChild(moveHandle);
 
     if(draft){
       wrap.insertBefore(el('div', {class:'essay-meta', style:'margin-bottom:14px; color:var(--private);'},
@@ -2515,6 +2583,7 @@
     const bodyEl = el('div', {class:'doc-read-body', style:'font-family: ' + fontFamilyFor(essay.bodyFont) + ';'});
     bodyEl.innerHTML = bodyHtml;
     positionOverlapImages(bodyEl);
+    applyImgCropFocal(bodyEl);
     wrap.appendChild(bodyEl);
 
     if(essay.bibliography && essay.bibliography.length > 0){
